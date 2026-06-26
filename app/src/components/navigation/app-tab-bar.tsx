@@ -1,8 +1,7 @@
 import { Feather } from '@react-native-vector-icons/feather';
 import { usePathname, useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { PressableScale } from '@/components/motion/pressable-scale';
 import { Colors, Fonts } from '@/constants/theme';
 
 const tabs = [
@@ -22,21 +21,22 @@ export function AppTabBar() {
         {tabs.map((tab) => {
           const active = tab.href === '/' ? pathname === '/' : pathname.startsWith(tab.href);
           return (
-            <PressableScale
-              key={tab.href}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-              onPress={() => router.push(tab.href)}
-              style={[styles.item, active && styles.itemActive]}>
-              <Feather
-                name={tab.icon}
-                size={19}
-                color={active ? Colors.light.primary : '#9D958A'}
-              />
-              <Text style={[styles.label, active && styles.labelActive]} numberOfLines={1}>
-                {tab.label}
-              </Text>
-            </PressableScale>
+            <View key={tab.href} style={styles.itemSlot}>
+              <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                onPress={() => router.push(tab.href)}
+                style={[styles.item, active && styles.itemActive]}>
+                <Feather
+                  name={tab.icon}
+                  size={19}
+                  color={active ? Colors.light.primary : '#9D958A'}
+                />
+                <Text style={[styles.label, active && styles.labelActive]} numberOfLines={1}>
+                  {tab.label}
+                </Text>
+              </Pressable>
+            </View>
           );
         })}
       </View>
@@ -53,11 +53,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bar: {
-    width: '88%',
-    maxWidth: 390,
+    width: '92%',
+    maxWidth: 420,
     minWidth: 300,
-    height: 72,
-    borderRadius: 36,
+    height: 76,
+    borderRadius: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -71,21 +71,28 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 14 },
     elevation: 5,
   },
-  item: {
+  itemSlot: {
     flex: 1,
-    height: 56,
-    borderRadius: 28,
+    minWidth: 0,
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  item: {
+    width: '100%',
+    height: 62,
+    borderRadius: 31,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
   },
   itemActive: {
-    backgroundColor: '#2A251F',
+    backgroundColor: '#2B251F',
   },
   label: {
     color: '#9D958A',
     fontFamily: Fonts.medium,
-    fontSize: 10,
+    fontSize: 10.5,
+    textAlign: 'center',
   },
   labelActive: {
     color: Colors.light.primary,

@@ -30,6 +30,22 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  userAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.backgroundElement,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  userInitial: {
+    color: Colors.light.black,
+    fontFamily: Fonts.demi,
+    fontSize: 14,
+    textTransform: 'lowercase',
+  },
   headerActions: {
     flexDirection: 'row',
     gap: 10,

@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import UsdcLogo from '../../../assets/icons/usdc.svg';
 import UsdtLogo from '../../../assets/icons/usdt.svg';
-import { PaayeeMark } from '@/components/brand/paayee-mark';
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
 import { Colors } from '@/constants/theme';
@@ -61,13 +60,12 @@ export function HomeScreen() {
           <View style={styles.shell}>
             <FadeInView style={styles.header}>
               <View style={styles.identity}>
-                <PaayeeMark size={40} />
+                <View style={styles.userAvatar}>
+                  <Text style={styles.userInitial}>jd</Text>
+                </View>
               </View>
 
               <View style={styles.headerActions}>
-                <PressableScale style={styles.iconButton}>
-                  <Feather name="search" size={19} color={Colors.light.black} />
-                </PressableScale>
                 <PressableScale style={[styles.iconButton, styles.iconButtonTint]}>
                   <Feather name="bell" size={18} color={Colors.light.black} />
                 </PressableScale>

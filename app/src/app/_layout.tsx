@@ -1,11 +1,22 @@
 import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
+import { AnimatedSplashScreen } from '@/components/brand/animated-splash-screen';
 import { AppTabBar } from '@/components/navigation/app-tab-bar';
 import { Colors } from '@/constants/theme';
 
+SplashScreen.preventAutoHideAsync().catch(() => null);
+
 export default function TabLayout() {
+  const [splashFinished, setSplashFinished] = useState(false);
+
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => null);
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: Colors.light.background }}>
       <StatusBar style="dark" />
@@ -16,6 +27,9 @@ export default function TabLayout() {
         }}
       />
       <AppTabBar />
+      {!splashFinished ? (
+        <AnimatedSplashScreen onFinish={() => setSplashFinished(true)} />
+      ) : null}
     </View>
   );
 }
