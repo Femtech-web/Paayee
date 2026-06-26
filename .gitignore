@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+tmp*
+.next
+
+# Local planning, strategy, pitch notes, and implementation scratchpads.
+private-notes/
+paayee-brand/
