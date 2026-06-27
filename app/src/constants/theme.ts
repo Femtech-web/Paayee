@@ -25,8 +25,8 @@ export const Colors = {
     tertiarySoft: '#F7F6F3',
     white: '#FFFFFF',
     black: '#171513',
-    error: '#D93D31',
-    success: '#20A662',
+    error: '#C94A3D',
+    success: '#168A55',
   },
   dark: {
     text: '#171513',
@@ -47,8 +47,8 @@ export const Colors = {
     tertiarySoft: '#F7F6F3',
     white: '#FFFFFF',
     black: '#171513',
-    error: '#D93D31',
-    success: '#20A662',
+    error: '#C94A3D',
+    success: '#168A55',
   },
 } as const;
 

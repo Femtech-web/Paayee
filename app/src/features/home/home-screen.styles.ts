@@ -30,22 +30,6 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  userAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.light.backgroundElement,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  userInitial: {
-    color: Colors.light.black,
-    fontFamily: Fonts.demi,
-    fontSize: 14,
-    textTransform: 'lowercase',
-  },
   headerActions: {
     flexDirection: 'row',
     gap: 10,
@@ -331,8 +315,6 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 14,
     gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
   },
   activityAvatar: {
     width: 40,
@@ -368,6 +350,9 @@ export const styles = StyleSheet.create({
     fontSize: 13,
   },
   activityAmountPositive: {
-    color: Colors.light.primary,
+    color: Colors.light.success,
+  },
+  activityAmountNegative: {
+    color: Colors.light.error,
   },
 });

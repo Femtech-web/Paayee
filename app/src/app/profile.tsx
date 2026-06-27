@@ -7,6 +7,7 @@ export default function ProfileScreen() {
       title="Account and privacy settings"
       body="Smart account details, reveal preferences, supported assets, and sandbox rail status will live here."
       icon="user"
+      action="Manage account"
     />
   );
 }

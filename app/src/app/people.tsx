@@ -1,12 +1,3 @@
-import { EmptyTabScreen } from '@/components/layout/empty-tab-screen';
+import { PeopleScreen } from '@/features/people/people-screen';
 
-export default function PeopleScreen() {
-  return (
-    <EmptyTabScreen
-      eyebrow="People"
-      title="Beneficiaries will live here"
-      body="Saved recipients, wallet addresses, and NGN rail details will make chat and voice payments safer."
-      icon="users"
-    />
-  );
-}
+export default PeopleScreen;

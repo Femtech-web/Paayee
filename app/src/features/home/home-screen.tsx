@@ -7,6 +7,7 @@ import UsdcLogo from '../../../assets/icons/usdc.svg';
 import UsdtLogo from '../../../assets/icons/usdt.svg';
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
+import { Avatar } from '@/components/ui/avatar';
 import { Colors } from '@/constants/theme';
 import { styles } from './home-screen.styles';
 
@@ -60,9 +61,7 @@ export function HomeScreen() {
           <View style={styles.shell}>
             <FadeInView style={styles.header}>
               <View style={styles.identity}>
-                <View style={styles.userAvatar}>
-                  <Text style={styles.userInitial}>jd</Text>
-                </View>
+                <Avatar initials="jd" />
               </View>
 
               <View style={styles.headerActions}>
@@ -182,6 +181,7 @@ export function HomeScreen() {
                     style={[
                       styles.activityAmount,
                       item.amount.startsWith('+') && styles.activityAmountPositive,
+                      item.amount.startsWith('-') && styles.activityAmountNegative,
                     ]}>
                     {item.amount}
                   </Text>
