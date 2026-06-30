@@ -1,4 +1,5 @@
 import { Feather } from '@react-native-vector-icons/feather';
+import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -51,6 +52,7 @@ const recentTransactions = [
 
 export function HomeScreen() {
   const [balanceVisible, setBalanceVisible] = useState(true);
+  const router = useRouter();
 
   return (
     <View style={styles.screen}>
@@ -117,7 +119,16 @@ export function HomeScreen() {
 
             <FadeInView delay={160} style={styles.quickActions}>
               {quickActions.map((action) => (
-                <PressableScale key={action.label} style={styles.actionItem}>
+                <PressableScale
+                  key={action.label}
+                  onPress={
+                    action.label === 'Send'
+                      ? () => router.push('/send' as Href)
+                      : action.label === 'Add money'
+                        ? () => router.push('/add-money' as Href)
+                        : undefined
+                  }
+                  style={styles.actionItem}>
                   <View style={styles.actionIcon}>
                     <Feather name={action.icon} size={24} color={Colors.light.black} />
                   </View>
@@ -137,7 +148,10 @@ export function HomeScreen() {
                 contentContainerStyle={styles.balanceCardsContent}
                 style={styles.balanceCards}>
                 {assets.map((asset) => (
-                  <View key={asset.code} style={styles.balanceCard}>
+                  <PressableScale
+                    key={asset.code}
+                    onPress={() => router.push(`/asset/${asset.code.toLowerCase()}` as Href)}
+                    style={styles.balanceCard}>
                     <View style={styles.balanceCardHeader}>
                       <View style={styles.assetOrb}>
                         {asset.icon === 'ngn' ? (
@@ -157,7 +171,7 @@ export function HomeScreen() {
                       {balanceVisible ? asset.amount : '••••'}
                     </Text>
                     <Text style={styles.balanceCardLabel}>{asset.label}</Text>
-                  </View>
+                  </PressableScale>
                 ))}
               </ScrollView>
             </FadeInView>

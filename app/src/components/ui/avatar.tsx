@@ -21,7 +21,7 @@ export function Avatar({ initials, muted = false, size = 44 }: AvatarProps) {
         muted && styles.avatarMuted,
       ]}>
       <Text style={[styles.initials, size < 40 && styles.initialsSmall]}>
-        {initials.toLowerCase()}
+        {initials.toUpperCase()}
       </Text>
     </View>
   );
@@ -43,7 +43,7 @@ const styles = StyleSheet.create({
     color: Colors.light.black,
     fontFamily: Fonts.demi,
     fontSize: 14,
-    textTransform: 'lowercase',
+    textTransform: 'uppercase',
   },
   initialsSmall: {
     fontSize: 12,

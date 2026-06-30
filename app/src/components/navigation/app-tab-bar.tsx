@@ -16,6 +16,10 @@ export function AppTabBar() {
   const pathname = usePathname();
   const router = useRouter();
 
+  if (pathname.startsWith('/asset') || pathname.startsWith('/send') || pathname.startsWith('/add-money')) {
+    return null;
+  }
+
   return (
     <View pointerEvents="box-none" style={styles.wrap}>
       <View style={styles.rim}>
