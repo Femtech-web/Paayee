@@ -3,4 +3,4 @@ export {
   AddMoneyMethodScreen,
   AddNgnBankTransferScreen,
   AddStablecoinTransferScreen,
-} from './add-money-screens';
+} from './screens';

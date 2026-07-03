@@ -1,15 +1,15 @@
 import { type Href } from 'expo-router';
 
 import {
+  fallbackBankRecipient,
   sendAssetOptions,
-  sendRecipients,
   type SendAssetCode,
   type SendAssetOption,
   type SendRecipient,
   type StablecoinNetworkOption,
 } from '../../send-data';
 
-export const defaultRecipient = sendRecipients[0];
+export const defaultRecipient = fallbackBankRecipient;
 
 export function readParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -23,8 +23,8 @@ export function formatMoney(value: number, asset: SendAssetOption) {
   return `${asset.symbol}${formatNumber(value)}`;
 }
 
-export function findAsset(code?: SendAssetCode) {
-  return sendAssetOptions.find((asset) => asset.code === code) ?? sendAssetOptions[0];
+export function findAsset(code?: SendAssetCode, assets: SendAssetOption[] = sendAssetOptions) {
+  return assets.find((asset) => asset.code === code) ?? assets[0];
 }
 
 export function getTransferFee(code: SendAssetCode) {
@@ -78,9 +78,15 @@ export function createBankAmountHref(recipient: SendRecipient) {
 }
 
 export function createHandleAmountHref(recipient: SendRecipient) {
+  const walletQuery = recipient.walletAddress
+    ? `&wallet=${encodeURIComponent(recipient.walletAddress)}`
+    : '';
+
   return `/send/handle/amount?name=${encodeURIComponent(recipient.name)}&bank=${encodeURIComponent(
     recipient.bankName,
-  )}&account=${encodeURIComponent(recipient.accountNumber)}&initials=${recipient.initials}` as Href;
+  )}&account=${encodeURIComponent(recipient.accountNumber)}&initials=${
+    recipient.initials
+  }${walletQuery}` as Href;
 }
 
 export function createStablecoinAmountHref({
@@ -94,5 +100,5 @@ export function createStablecoinAmountHref({
 }) {
   return `/send/stablecoin/amount?name=${encodeURIComponent(network.name)}&bank=&account=${encodeURIComponent(
     address,
-  )}&initials=SC&asset=${asset}` as Href;
+  )}&initials=SC&asset=${asset}&networkId=${network.id}` as Href;
 }

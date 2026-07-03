@@ -9,14 +9,24 @@ const tabs = [
   { href: '/', label: 'Home', icon: 'home' },
   { href: '/people', label: 'People', icon: 'users' },
   { href: '/transactions', label: 'Transactions', icon: 'trending-up' },
-  { href: '/profile', label: 'Profile', icon: 'user' },
+  { href: '/profile', label: 'More', icon: 'more-horizontal' },
 ] as const;
 
 export function AppTabBar() {
   const pathname = usePathname();
   const router = useRouter();
 
-  if (pathname.startsWith('/asset') || pathname.startsWith('/send') || pathname.startsWith('/add-money')) {
+  if (
+    pathname.startsWith('/asset') ||
+    pathname.startsWith('/send') ||
+    pathname.startsWith('/add-money') ||
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/onboarding') ||
+    pathname.startsWith('/operation-success') ||
+    pathname.startsWith('/setup') ||
+    pathname.startsWith('/transaction/') ||
+    pathname.startsWith('/profile/')
+  ) {
     return null;
   }
 

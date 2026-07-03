@@ -1,14 +1,26 @@
 import { Feather } from '@react-native-vector-icons/feather';
+import * as Clipboard from 'expo-clipboard';
 import { type Href, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FeedbackToast } from '@/components/feedback-toast';
 import UsdcLogo from '../../../assets/icons/usdc.svg';
 import UsdtLogo from '../../../assets/icons/usdt.svg';
+import { SkeletonBlock } from '@/components/loading/skeleton';
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
 import { Colors } from '@/constants/theme';
+import { runtimeConfig } from '@/config/runtime';
+import { FundingQrCode } from '@/features/add-money/components/funding-qr-code';
+import { useAppData } from '@/features/app-data';
+import {
+  getKlydeFundingInstructions,
+  listKlydeTransactions,
+  type KlydeFundingInstructions,
+} from '@/integrations/klyde';
+import { splitAddress } from '../add-money/components/add-money-ui';
 import { assetDetails, type AssetCode } from './asset-data';
 import { styles } from './asset-detail-screen.styles';
 
@@ -18,16 +30,27 @@ type AssetDetailScreenProps = {
   assetCode: AssetCode;
 };
 
-const qrCells = Array.from({ length: 81 }, (_, index) => {
-  const row = Math.floor(index / 9);
-  const col = index % 9;
-  return row === 0 || col === 0 || row === 8 || col === 8 || (row + col) % 3 === 0 || row === col;
-});
-
 export function AssetDetailScreen({ assetCode }: AssetDetailScreenProps) {
   const router = useRouter();
   const asset = assetDetails[assetCode];
+  const { data, loading } = useAppData();
+  const liveBalance = data?.balances.find(
+    (balance) => balance.code.toLowerCase() === assetCode,
+  );
+  const displayBalance = liveBalance?.displayAmount ?? asset.balance;
+  const displayName = liveBalance?.name ?? asset.balanceLabel;
   const [balanceVisible, setBalanceVisible] = useState(true);
+  const [toastMessage, setToastMessage] = useState('');
+
+  useEffect(() => {
+    if (!toastMessage) {
+      return;
+    }
+
+    const timeout = setTimeout(() => setToastMessage(''), 3500);
+
+    return () => clearTimeout(timeout);
+  }, [toastMessage]);
 
   return (
     <View style={styles.screen}>
@@ -53,9 +76,13 @@ export function AssetDetailScreen({ assetCode }: AssetDetailScreenProps) {
               <View style={styles.assetHeroIcon}>
                 <AssetIcon code={asset.code} large />
               </View>
-              <Text style={styles.balanceLabel}>{asset.balanceLabel}</Text>
+              <Text style={styles.balanceLabel}>{displayName}</Text>
               <View style={styles.balanceRow}>
-                <Text style={styles.balance}>{balanceVisible ? asset.balance : '••••••'}</Text>
+                {loading ? (
+                  <SkeletonBlock style={styles.balanceSkeleton} />
+                ) : (
+                  <Text style={styles.balance}>{balanceVisible ? displayBalance : '••••••'}</Text>
+                )}
                 <Pressable
                   onPress={() => setBalanceVisible((isVisible) => !isVisible)}
                   style={styles.visibilityButton}
@@ -66,18 +93,14 @@ export function AssetDetailScreen({ assetCode }: AssetDetailScreenProps) {
               </View>
               <View style={styles.actionRow}>
                 <PressableScale
-                  onPress={() => router.push(`/add-money?asset=${asset.displayCode}` as Href)}
-                  style={styles.actionPill}>
-                  <Feather name="plus" size={20} color={Colors.light.black} />
-                  <Text style={styles.actionText}>Add</Text>
-                </PressableScale>
-                <PressableScale
                   onPress={() => router.push('/send' as Href)}
                   style={styles.actionPill}>
                   <Feather name="arrow-up-right" size={20} color={Colors.light.black} />
                   <Text style={styles.actionText}>Send</Text>
                 </PressableScale>
-                <PressableScale style={styles.actionPill}>
+                <PressableScale
+                  onPress={() => router.push(`/add-money/conversion?asset=${asset.displayCode}` as Href)}
+                  style={styles.actionPill}>
                   <Feather name="refresh-cw" size={20} color={Colors.light.black} />
                   <Text style={styles.actionText}>Convert</Text>
                 </PressableScale>
@@ -86,9 +109,19 @@ export function AssetDetailScreen({ assetCode }: AssetDetailScreenProps) {
 
             <View style={styles.divider} />
 
-            {asset.code === 'ngn' ? <NgnReceivePanel /> : <StablecoinReceivePanel assetCode={asset.code} />}
+            {asset.code === 'ngn' ? (
+              <NgnReceivePanel />
+            ) : (
+              <StablecoinReceivePanel
+                assetCode={asset.code}
+                onCopied={() => setToastMessage('Wallet address copied')}
+              />
+            )}
           </View>
         </ScrollView>
+        <View pointerEvents="box-none" style={styles.toastOverlay}>
+          <FeedbackToast message={toastMessage} tone="success" />
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -118,21 +151,8 @@ function NgnReceivePanel() {
         <Text style={styles.receiveSubtitle}>Add money to your Paayee NGN balance</Text>
       </View>
 
-      <View style={styles.noticeCard}>
-        <View style={styles.noticeIcon}>
-          <Feather name="info" size={18} color={Colors.light.primary} />
-        </View>
-        <View style={styles.noticeCopy}>
-          <Text style={styles.noticeTitle}>Funding route</Text>
-          <Text style={styles.noticeText}>
-            Paayee shows payment instructions and tracks deposit status while keeping the
-            product experience simple.
-          </Text>
-        </View>
-      </View>
-
       <PressableScale
-        onPress={() => router.push('/asset/ngn/account-details' as Href)}
+        onPress={() => router.push('/add-money/bank-transfer' as Href)}
         style={styles.ngnSetupCard}>
         <View style={styles.ngnSetupCopy}>
           <Text style={styles.ngnSetupTitle}>Set up NGN funding</Text>
@@ -158,8 +178,125 @@ function NgnReceivePanel() {
   );
 }
 
-function StablecoinReceivePanel({ assetCode }: { assetCode: Extract<AssetCode, 'usdc' | 'usdt'> }) {
+function StablecoinReceivePanel({
+  assetCode,
+  onCopied,
+}: {
+  assetCode: Extract<AssetCode, 'usdc' | 'usdt'>;
+  onCopied: () => void;
+}) {
+  const router = useRouter();
   const asset = assetDetails[assetCode];
+  const assetDisplayCode = asset.displayCode as 'USDC' | 'USDT';
+  const openedAtRef = useRef(Date.now());
+  const routedDepositRef = useRef(false);
+  const [fundingInstructions, setFundingInstructions] = useState<KlydeFundingInstructions>();
+  const [addressError, setAddressError] = useState('');
+  const walletFunding = fundingInstructions?.rail === 'wallet' ? fundingInstructions : undefined;
+  const address = walletFunding?.address ?? asset.address ?? '';
+  const qrPayload = walletFunding?.qrPayload ?? address;
+  const networkName = walletFunding?.networkName ?? asset.networks?.find((network) => network.selected)?.label ?? 'network';
+  const tokenSymbol = walletFunding?.tokenSymbol ?? assetDisplayCode;
+  const tokenDecimals = walletFunding?.tokenDecimals ?? 6;
+  const tokenAddress = walletFunding?.tokenAddress;
+
+  useEffect(() => {
+    if (!runtimeConfig.realIntegrationsEnabled) {
+      return;
+    }
+
+    let mounted = true;
+
+    getKlydeFundingInstructions({
+      currency: assetDisplayCode,
+      market: 'NG',
+      rail: 'wallet',
+      chainId: 31337,
+    })
+      .then((instructions) => {
+        if (!mounted) {
+          return;
+        }
+
+        if (instructions.rail !== 'wallet') {
+          setAddressError(
+            `Klyde returned ${instructions.currency} ${instructions.rail} instructions instead of ${assetDisplayCode} wallet instructions.`,
+          );
+          return;
+        }
+
+        setFundingInstructions(instructions);
+        setAddressError('');
+      })
+      .catch((error) => {
+        if (__DEV__) {
+          console.warn(`Could not load ${assetDisplayCode} funding instructions`, error);
+        }
+
+        if (mounted) {
+          setAddressError(error instanceof Error ? error.message : `Could not load ${assetDisplayCode} funding address.`);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [assetDisplayCode]);
+
+  useEffect(() => {
+    if (!runtimeConfig.realIntegrationsEnabled || addressError || !walletFunding) {
+      return;
+    }
+
+    let mounted = true;
+
+    async function pollForStablecoinDeposit() {
+      if (routedDepositRef.current) {
+        return;
+      }
+
+      try {
+        const response = await listKlydeTransactions({ page: 1, pageSize: 20 });
+        const deposit = response.data.find((transaction) => {
+          const createdAt = new Date(transaction.createdAt).getTime();
+
+          return (
+            transaction.kind === 'deposit' &&
+            transaction.amount.currency === assetDisplayCode &&
+            Number.isFinite(createdAt) &&
+            createdAt >= openedAtRef.current - 5000
+          );
+        });
+
+        if (!mounted || !deposit) {
+          return;
+        }
+
+        routedDepositRef.current = true;
+        const receiptParam = deposit.receiptId ? `&receiptId=${encodeURIComponent(deposit.receiptId)}` : '';
+
+        router.replace(
+          `/operation-success?title=${encodeURIComponent(`${assetDisplayCode} received`)}&amount=${encodeURIComponent(
+            formatStablecoinOperationAmount(deposit.amount.display, assetDisplayCode),
+          )}&asset=${encodeURIComponent(assetDisplayCode)}&kind=deposit&transactionId=${encodeURIComponent(
+            deposit.id,
+          )}${receiptParam}` as Href,
+        );
+      } catch (error) {
+        if (__DEV__) {
+          console.warn(`Could not poll ${assetDisplayCode} deposits`, error);
+        }
+      }
+    }
+
+    void pollForStablecoinDeposit();
+    const interval = setInterval(pollForStablecoinDeposit, 3500);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [addressError, assetDisplayCode, router, walletFunding]);
 
   return (
     <FadeInView delay={120} style={styles.receiveSection}>
@@ -169,39 +306,32 @@ function StablecoinReceivePanel({ assetCode }: { assetCode: Extract<AssetCode, '
       </View>
 
       <View style={styles.networkRow}>
-        {asset.networks?.map((network) => (
-          <PressableScale
-            key={network.label}
-            style={[styles.networkPill, network.selected && styles.networkPillActive]}>
-            <Feather
-              name="link"
-              size={17}
-              color={network.selected ? '#4B83FF' : Colors.light.textSecondary}
-            />
-            <Text style={[styles.networkText, network.selected && styles.networkTextActive]}>
-              {network.label}
-            </Text>
-          </PressableScale>
-        ))}
+        <View style={[styles.networkPill, styles.networkPillActive]}>
+          <Feather name="link" size={17} color="#4B83FF" />
+          <Text style={[styles.networkText, styles.networkTextActive]}>{networkName}</Text>
+        </View>
       </View>
 
       <View style={styles.qrCard}>
         <View style={styles.qrBox}>
-          {qrCells.map((filled, index) => (
-            <View key={index} style={[styles.qrCell, filled && styles.qrCellFilled]} />
-          ))}
+          <FundingQrCode payload={qrPayload} style={styles.qrSvg} />
           <View style={styles.qrLogo}>
             <Feather name="link-2" size={22} color={Colors.light.black} />
           </View>
         </View>
 
         <Text selectable style={styles.addressText}>
-          {asset.address}
+          {splitAddress(address)}
         </Text>
 
         <View style={styles.copyRow}>
           <View style={styles.copyButtonSlot}>
-            <PressableScale style={styles.secondaryButton}>
+            <PressableScale
+              onPress={async () => {
+                await Clipboard.setStringAsync(address);
+                onCopied();
+              }}
+              style={styles.secondaryButton}>
               <Text numberOfLines={1} style={styles.secondaryButtonText}>
                 Copy
               </Text>
@@ -218,8 +348,25 @@ function StablecoinReceivePanel({ assetCode }: { assetCode: Extract<AssetCode, '
           </View>
         </View>
 
-        <Text style={styles.depositNote}>{asset.depositNote}</Text>
+        {addressError ? <Text style={styles.errorText}>{addressError}</Text> : null}
+        <Text style={styles.depositNote}>
+          Only send {tokenSymbol} on {networkName}. Deposits use {tokenDecimals} decimals and are credited after confirmation.
+        </Text>
+        {tokenAddress ? <Text style={styles.tokenText}>Token contract: {splitAddress(tokenAddress)}</Text> : null}
       </View>
     </FadeInView>
   );
+}
+
+function formatStablecoinOperationAmount(display: string, assetCode: 'USDC' | 'USDT'): string {
+  const numericAmount = Number(display);
+
+  if (!Number.isFinite(numericAmount)) {
+    return `${display} ${assetCode}`;
+  }
+
+  return `$${numericAmount.toLocaleString('en-US', {
+    maximumFractionDigits: 6,
+    minimumFractionDigits: numericAmount % 1 === 0 ? 0 : 2,
+  })}`;
 }

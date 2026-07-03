@@ -1,10 +1,12 @@
 import { Feather } from '@react-native-vector-icons/feather';
 import { type Href, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
 import { FadeInView } from '@/components/motion/fade-in-view';
+import { useAppData } from '@/features/app-data';
 import {
+  createSendAssetOptionsFromBalances,
   sendAssetOptions,
   type SendAssetCode,
   type SendAssetOption,
@@ -43,10 +45,19 @@ export function SharedAmountScreen({
 }: SharedAmountScreenProps) {
   const router = useRouter();
   const recipient = useRecipientParams(fallbackRecipient);
-  const [sendAsset, setSendAsset] = useState<SendAssetOption>(defaultSendAsset);
-  const [receiveAsset, setReceiveAsset] = useState<SendAssetOption>(defaultSendAsset);
+  const { data } = useAppData();
+  const liveAssets = useMemo(
+    () => createSendAssetOptionsFromBalances(data?.balances),
+    [data?.balances],
+  );
+  const [sendAssetCode, setSendAssetCode] = useState<SendAssetCode>(defaultSendAsset.code);
+  const [receiveAssetCode, setReceiveAssetCode] = useState<SendAssetCode>(defaultSendAsset.code);
   const [activeAssetPicker, setActiveAssetPicker] = useState<'receive' | 'send' | null>(null);
   const [tenderedAmount, setTenderedAmount] = useState(defaultTenderedAmount);
+  const sendAsset =
+    liveAssets.find((asset) => asset.code === sendAssetCode) ?? defaultSendAsset;
+  const receiveAsset =
+    liveAssets.find((asset) => asset.code === receiveAssetCode) ?? sendAsset;
   const numericTendered = Number(tenderedAmount || 0);
   const fee = numericTendered > 0 ? getTransferFee(sendAsset.code) : 0;
   const recipientAmount = Math.max(numericTendered - fee, 0);
@@ -126,15 +137,16 @@ export function SharedAmountScreen({
         onClose={() => setActiveAssetPicker(null)}
         onSelect={(asset) => {
           if (activeAssetPicker === 'send') {
-            setSendAsset(asset);
-            setReceiveAsset(asset);
+            setSendAssetCode(asset.code);
+            setReceiveAssetCode(asset.code);
           } else if (activeAssetPicker === 'receive') {
-            setReceiveAsset(asset);
+            setReceiveAssetCode(asset.code);
           }
           setActiveAssetPicker(null);
         }}
         selectedAsset={activeAssetPicker === 'receive' ? receiveAsset : sendAsset}
         allowedCodes={allowedAssetCodes}
+        assets={liveAssets}
       />
     </ScreenShell>
   );

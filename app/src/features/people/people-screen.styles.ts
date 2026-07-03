@@ -17,8 +17,8 @@ export const styles = StyleSheet.create({
   title: {
     color: Colors.light.black,
     fontFamily: Fonts.demi,
-    fontSize: 40,
-    lineHeight: 46,
+    fontSize: 28,
+    lineHeight: 34,
   },
   subtitle: {
     maxWidth: 292,
@@ -108,6 +108,21 @@ export const styles = StyleSheet.create({
   list: {
     gap: 18,
   },
+  rowAvatarSkeleton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
+  rowTitleSkeleton: {
+    width: '68%',
+    height: 20,
+    borderRadius: 10,
+  },
+  rowSubtitleSkeleton: {
+    width: '48%',
+    height: 15,
+    borderRadius: 8,
+  },
   personRow: {
     minHeight: 76,
     flexDirection: 'row',
@@ -175,6 +190,55 @@ export const styles = StyleSheet.create({
     fontFamily: Fonts.demi,
     fontSize: 14,
   },
+  emptyState: {
+    minHeight: 286,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 26,
+    paddingVertical: 30,
+    backgroundColor: Colors.light.white,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  emptyIcon: {
+    width: 66,
+    height: 66,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.backgroundElement,
+  },
+  emptyTitle: {
+    marginTop: 6,
+    color: Colors.light.black,
+    fontFamily: Fonts.demi,
+    fontSize: 19,
+    lineHeight: 24,
+    textAlign: 'center',
+  },
+  emptyText: {
+    color: Colors.light.textSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  emptyButton: {
+    minHeight: 48,
+    marginTop: 6,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    backgroundColor: Colors.light.black,
+  },
+  emptyButtonText: {
+    color: Colors.light.white,
+    fontFamily: Fonts.demi,
+    fontSize: 14,
+  },
   modalRoot: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -188,6 +252,7 @@ export const styles = StyleSheet.create({
   },
   sheet: {
     width: '100%',
+    position: 'relative',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingHorizontal: 24,
@@ -238,7 +303,33 @@ export const styles = StyleSheet.create({
     fontFamily: Fonts.sans,
     fontSize: 15,
     lineHeight: 22,
-    textAlign: 'center',
+  },
+  railSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  railChoice: {
+    minHeight: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    backgroundColor: Colors.light.backgroundElement,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  railChoiceActive: {
+    backgroundColor: Colors.light.black,
+    borderColor: Colors.light.black,
+  },
+  railChoiceText: {
+    color: Colors.light.textSecondary,
+    fontFamily: Fonts.demi,
+    fontSize: 13,
+  },
+  railChoiceTextActive: {
+    color: Colors.light.white,
   },
   fieldGroup: {
     gap: 8,
@@ -248,49 +339,45 @@ export const styles = StyleSheet.create({
     fontFamily: Fonts.medium,
     fontSize: 13,
   },
-  fieldBox: {
+  fieldInput: {
     minHeight: 58,
     borderRadius: 20,
-    justifyContent: 'center',
     paddingHorizontal: 18,
-    backgroundColor: Colors.light.backgroundElement,
-  },
-  fieldPlaceholder: {
     color: Colors.light.black,
     fontFamily: Fonts.medium,
     fontSize: 16,
+    backgroundColor: Colors.light.backgroundElement,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
   },
-  sheetOption: {
-    minHeight: 66,
-    borderRadius: 22,
+  networkSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  networkChoice: {
+    minHeight: 44,
+    borderRadius: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'center',
+    gap: 7,
     paddingHorizontal: 14,
     backgroundColor: Colors.light.backgroundElement,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
   },
-  sheetOptionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.light.railSoft,
+  networkChoiceActive: {
+    backgroundColor: '#EEF4FF',
+    borderColor: Colors.light.primary,
   },
-  sheetOptionCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  sheetOptionTitle: {
-    color: Colors.light.black,
-    fontFamily: Fonts.demi,
-    fontSize: 15,
-  },
-  sheetOptionText: {
-    marginTop: 2,
+  networkChoiceText: {
     color: Colors.light.textSecondary,
-    fontFamily: Fonts.sans,
-    fontSize: 12,
+    fontFamily: Fonts.demi,
+    fontSize: 13,
+  },
+  networkChoiceTextActive: {
+    color: Colors.light.primary,
   },
   sheetPrimaryButton: {
     minHeight: 58,
@@ -298,6 +385,9 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.light.black,
+  },
+  sheetPrimaryButtonDisabled: {
+    backgroundColor: '#DEE3EC',
   },
   sheetPrimaryText: {
     color: Colors.light.white,

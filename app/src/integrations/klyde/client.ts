@@ -1,139 +1,423 @@
-import { getKlydeConfig, type KlydeConfig } from './env';
+import * as SecureStore from 'expo-secure-store';
 
-type KlydeHttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+import type {
+  DepositSource,
+  KlydeBalance,
+  KlydeConversion,
+  KlydeDeposit,
+  KlydeFundingInstructions,
+  KlydeQuote,
+  KlydeRecentRecipient,
+  KlydeReceipt,
+  KlydeTimelineItem,
+  KlydeTransaction,
+  KlydeUser,
+  KlydeWallet,
+  KlydeWalletSnapshot,
+  KlydeWithdrawal,
+  MoneyAmount,
+  SettlementAsset,
+  WithdrawalDestination,
+} from '@klyde/core';
+import {
+  type BootstrapHostAppSessionInput,
+  createKlyde,
+  type CreateDepositInput,
+  type CreateKlydeOptions,
+  type ExecuteConversionInput,
+  type CreateWithdrawalInput,
+  type GetConversionInput,
+  type GetFundingInstructionsInput,
+  type GetReceiptInput,
+  type GetWalletSnapshotInput,
+  type KlydeAuthRequestOptions,
+  type KlydeAuthResult,
+  type KlydeClient,
+  type KlydePaginatedResponse,
+  type KlydeRequestOptions,
+  type KlydeSdkCommands,
+  type ListReceiptsInput,
+  type ListRecentRecipientsInput,
+  type ListTransactionsInput,
+  type QuoteConversionInput,
+  type QuoteDepositInput,
+  type QuoteWithdrawalInput,
+  type SimulateFundingReceivedInput,
+  type SimulateFundingReceivedResult,
+  type StartEmailVerificationInput,
+  type StartVerificationResult,
+  type VerifyEmailInput,
+} from '@klyde/sdk';
 
-type KlydeRequestOptions = {
-  apiKey?: string;
-  body?: unknown;
-  idempotencyKey?: string;
-  sessionToken?: string;
-  signal?: AbortSignal;
+import { runtimeConfig } from '@/config/runtime';
+import { requestKlydeHostAppAssertion } from '@/integrations/supabase';
+
+import { getKlydeConfig } from './env';
+
+const KLYDE_SESSION_TOKEN_KEY = 'paayee.klyde.sessionToken';
+const KLYDE_REFRESH_TOKEN_KEY = 'paayee.klyde.refreshToken';
+
+let hydratedClientPromise: Promise<KlydeClient> | undefined;
+
+export type {
+  BootstrapHostAppSessionInput,
+  CreateDepositInput,
+  CreateWithdrawalInput,
+  DepositSource,
+  GetReceiptInput,
+  KlydeAuthResult,
+  KlydeBalance,
+  KlydeConversion,
+  KlydeDeposit,
+  KlydeFundingInstructions,
+  KlydeQuote,
+  KlydePaginatedResponse,
+  KlydeRecentRecipient,
+  KlydeReceipt,
+  KlydeRequestOptions,
+  KlydeTimelineItem,
+  KlydeTransaction,
+  KlydeUser,
+  KlydeWallet,
+  KlydeWalletSnapshot,
+  KlydeWithdrawal,
+  ExecuteConversionInput,
+  GetConversionInput,
+  GetFundingInstructionsInput,
+  ListReceiptsInput,
+  ListRecentRecipientsInput,
+  ListTransactionsInput,
+  MoneyAmount,
+  QuoteConversionInput,
+  QuoteDepositInput,
+  QuoteWithdrawalInput,
+  SimulateFundingReceivedInput,
+  SimulateFundingReceivedResult,
+  SettlementAsset,
+  StartEmailVerificationInput,
+  StartVerificationResult,
+  VerifyEmailInput,
+  WithdrawalDestination,
 };
 
-export type KlydeHealth = {
-  ok?: boolean;
-  status?: string;
-  uptime?: number;
-};
+export type KlydeMoneyAmount = MoneyAmount;
+export type PaayeeKlydeClient = KlydeClient;
+export type PaayeeKlydeCommands = KlydeSdkCommands;
 
-export type KlydeMoneyAmount = {
-  currency: string;
-  display?: string;
-  minorUnits?: string;
-  scale?: number;
-};
+export async function getKlydeClient(): Promise<KlydeClient> {
+  assertRealKlydeIntegrationsEnabled();
 
-export type KlydeQuoteDepositInput = {
-  amount: KlydeMoneyAmount;
-  rail?: {
-    provider?: string;
-    type?: string;
-  };
-};
+  hydratedClientPromise ??= createHydratedKlydeClient();
 
-export type KlydeCreateDepositInput = {
-  quoteId: string;
-  source: {
-    type: string;
-    provider?: string;
-    reference?: string;
-  };
-};
-
-export type KlydeApiClient = ReturnType<typeof createKlydeApiClient>;
-
-export function createKlydeApiClient(config: KlydeConfig = getKlydeConfig()) {
-  return {
-    health: (options?: Pick<KlydeRequestOptions, 'signal'>) =>
-      request<KlydeHealth>(config, 'GET', '/health', options),
-
-    getCurrentUser: (options?: KlydeRequestOptions) =>
-      request<unknown>(config, 'GET', '/v1/me', options),
-
-    getCurrentWallet: (options?: KlydeRequestOptions) =>
-      request<unknown>(config, 'GET', '/v1/wallets/current', options),
-
-    quoteDeposit: (body: KlydeQuoteDepositInput, options?: KlydeRequestOptions) =>
-      request<unknown>(config, 'POST', '/v1/quotes/deposit', { ...options, body }),
-
-    createDeposit: (body: KlydeCreateDepositInput, options?: KlydeRequestOptions) =>
-      request<unknown>(config, 'POST', '/v1/deposits', { ...options, body }),
-
-    getReceipt: (receiptId: string, options?: KlydeRequestOptions) =>
-      request<unknown>(config, 'GET', `/v1/receipts/${encodeURIComponent(receiptId)}`, options),
-  };
+  return hydratedClientPromise;
 }
 
-async function request<TResponse>(
-  config: KlydeConfig,
-  method: KlydeHttpMethod,
-  path: string,
-  options: KlydeRequestOptions = {},
-): Promise<TResponse> {
-  const response = await fetch(`${config.apiUrl}${path}`, {
-    method,
-    headers: createHeaders(config, options),
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    signal: options.signal,
+export function createKlydeClient(options: Partial<CreateKlydeOptions> = {}): KlydeClient {
+  const config = getKlydeConfig();
+
+  return createKlyde({
+    apiUrl: config.apiUrl,
+    appId: config.appId,
+    apiKey: config.apiKey,
+    environment: config.environment,
+    market: config.market,
+    sessionStore: {
+      getRefreshToken: () => getSecureStoreValue(KLYDE_REFRESH_TOKEN_KEY),
+      getSessionToken: () => getSecureStoreValue(KLYDE_SESSION_TOKEN_KEY),
+      setRefreshToken: (token) => setSecureStoreValue(KLYDE_REFRESH_TOKEN_KEY, token),
+      setSessionToken: (token) => setSecureStoreValue(KLYDE_SESSION_TOKEN_KEY, token),
+    },
+    ...options,
   });
-
-  const payload = await parseResponse(response);
-
-  if (!response.ok) {
-    throw new Error(readKlydeErrorMessage(response.status, payload));
-  }
-
-  return payload as TResponse;
 }
 
-function createHeaders(
-  config: KlydeConfig,
-  options: KlydeRequestOptions,
-): Record<string, string> {
-  return stripUndefinedHeaders({
-    accept: 'application/json',
-    'content-type': 'application/json',
-    'x-klyde-app-id': config.appId,
-    'x-klyde-environment': config.environment,
-    'x-klyde-market': config.market,
-    'x-idempotency-key': options.idempotencyKey,
-    authorization: options.sessionToken ? `Bearer ${options.sessionToken}` : undefined,
-    'x-klyde-api-key': options.apiKey,
-  });
+export async function startKlydeEmailVerification(
+  input: StartEmailVerificationInput,
+  options?: KlydeAuthRequestOptions,
+): Promise<StartVerificationResult> {
+  const client = await getKlydeClient();
+
+  return client.auth.startEmailVerification(input, options);
 }
 
-async function parseResponse(response: Response): Promise<unknown> {
-  if (response.status === 204) {
+export async function verifyKlydeEmail(
+  input: VerifyEmailInput,
+  options?: KlydeAuthRequestOptions,
+): Promise<KlydeAuthResult> {
+  const client = await getKlydeClient();
+  const result = await client.auth.verifyEmail(input, options);
+
+  await persistKlydeAuthResult(result);
+
+  return result;
+}
+
+export async function refreshKlydeSession(
+  options?: KlydeAuthRequestOptions,
+): Promise<KlydeAuthResult | undefined> {
+  const refreshToken = await SecureStore.getItemAsync(KLYDE_REFRESH_TOKEN_KEY);
+
+  if (!refreshToken) {
     return undefined;
   }
 
-  const text = await response.text();
+  const client = await getKlydeClient();
+  const result = await client.auth.refreshSession({ refreshToken }, options);
 
-  if (!text) {
-    return undefined;
-  }
+  await persistKlydeAuthResult(result);
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+  return result;
 }
 
-function readKlydeErrorMessage(status: number, payload: unknown): string {
-  if (payload && typeof payload === 'object' && 'message' in payload) {
-    const message = (payload as { message?: unknown }).message;
+export async function bootstrapKlydeHostAppSession(
+  input: BootstrapHostAppSessionInput,
+  options?: KlydeAuthRequestOptions,
+): Promise<KlydeAuthResult> {
+  const client = await getKlydeClient();
 
-    if (typeof message === 'string') {
-      return message;
+  return client.auth.bootstrapHostAppSession(input, options);
+}
+
+export async function clearKlydeSession(options?: KlydeAuthRequestOptions): Promise<void> {
+  const client = hydratedClientPromise ? await hydratedClientPromise : undefined;
+
+  if (client) {
+    try {
+      await client.auth.logout(options);
+    } catch {
+      await client.setSessionToken(undefined);
     }
   }
 
-  return `Klyde API request failed with HTTP ${status}`;
+  await Promise.all([
+    SecureStore.deleteItemAsync(KLYDE_SESSION_TOKEN_KEY),
+    SecureStore.deleteItemAsync(KLYDE_REFRESH_TOKEN_KEY),
+  ]);
+
+  hydratedClientPromise = undefined;
 }
 
-function stripUndefinedHeaders(headers: Record<string, string | undefined>): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(headers).filter((entry): entry is [string, string] => entry[1] !== undefined),
+export async function getKlydeUser(options?: KlydeRequestOptions): Promise<KlydeUser> {
+  return withKlydeClient((client) => client.getUser(options));
+}
+
+export async function getKlydeWallet(options?: KlydeRequestOptions): Promise<KlydeWallet> {
+  return withKlydeClient((client) => client.getWallet(options));
+}
+
+export async function getKlydeWalletSnapshot(
+  input?: GetWalletSnapshotInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeWalletSnapshot> {
+  return withKlydeClient((client) => client.getWalletSnapshot(input, options));
+}
+
+export async function getKlydeBalances(
+  input?: GetWalletSnapshotInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeBalance[]> {
+  return withKlydeClient((client) => client.getBalances(input, options));
+}
+
+export async function getKlydeAccountSnapshot(options?: KlydeRequestOptions): Promise<{
+  user: KlydeUser;
+  wallet: KlydeWallet;
+}> {
+  return withKlydeClient(async (client) => {
+    const [user, wallet] = await Promise.all([client.getUser(options), client.getWallet(options)]);
+
+    return { user, wallet };
+  });
+}
+
+export async function quoteKlydeDeposit(
+  input: QuoteDepositInput,
+  options?: KlydeRequestOptions,
+) {
+  return withKlydeClient((client) => client.quoteDeposit(input, options));
+}
+
+export async function createKlydeDeposit(
+  input: CreateDepositInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeDeposit> {
+  return withKlydeClient((client) => client.deposit(input, options));
+}
+
+export async function quoteKlydeWithdrawal(
+  input: QuoteWithdrawalInput,
+  options?: KlydeRequestOptions,
+) {
+  return withKlydeClient((client) => client.quoteWithdrawal(input, options));
+}
+
+export async function createKlydeWithdrawal(
+  input: CreateWithdrawalInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeWithdrawal> {
+  return withKlydeClient((client) => client.withdraw(input, options));
+}
+
+export async function quoteKlydeConversion(
+  input: QuoteConversionInput,
+  options?: KlydeRequestOptions,
+) {
+  return withKlydeClient((client) => client.quoteConversion(input, options));
+}
+
+export async function executeKlydeConversion(
+  input: ExecuteConversionInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeConversion> {
+  return withKlydeClient((client) => client.executeConversion(input, options));
+}
+
+export async function getKlydeConversion(
+  input: GetConversionInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeConversion> {
+  return withKlydeClient((client) => client.getConversion(input, options));
+}
+
+export async function getKlydeFundingInstructions(
+  input?: GetFundingInstructionsInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeFundingInstructions> {
+  return withKlydeClient((client) => client.getFundingInstructions(input, options));
+}
+
+export async function simulateKlydeFundingReceived(
+  input: SimulateFundingReceivedInput,
+  options?: KlydeRequestOptions,
+): Promise<SimulateFundingReceivedResult> {
+  return withKlydeClient((client) => {
+    const simulateFundingReceived = client.simulateFundingReceived?.bind(client);
+
+    if (simulateFundingReceived) {
+      return simulateFundingReceived(input, options);
+    }
+
+    const request = (client as unknown as {
+      request?: (
+        method: 'POST',
+        path: string,
+        body: SimulateFundingReceivedInput,
+        options?: KlydeRequestOptions,
+      ) => Promise<SimulateFundingReceivedResult>;
+    }).request?.bind(client);
+
+    if (!request) {
+      throw new Error('This Klyde SDK build does not support funding simulation.');
+    }
+
+    return request('POST', '/v1/funding/simulate-received', input, options);
+  });
+}
+
+export async function getKlydeReceipt(
+  input: GetReceiptInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeReceipt> {
+  return withKlydeClient((client) => client.getReceipt(input, options));
+}
+
+export async function listKlydeReceipts(
+  input?: ListReceiptsInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydePaginatedResponse<KlydeReceipt>> {
+  return withKlydeClient((client) => client.listReceipts(input, options));
+}
+
+export async function listKlydeTransactions(
+  input?: ListTransactionsInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydePaginatedResponse<KlydeTransaction>> {
+  return withKlydeClient((client) => client.listTransactions(input, options));
+}
+
+export async function listKlydeRecentRecipients(
+  input?: ListRecentRecipientsInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeRecentRecipient[]> {
+  return withKlydeClient((client) => client.listRecentRecipients(input, options));
+}
+
+async function createHydratedKlydeClient(): Promise<KlydeClient> {
+  return createKlydeClient();
+}
+
+async function persistKlydeAuthResult(result: KlydeAuthResult): Promise<void> {
+  await SecureStore.setItemAsync(KLYDE_SESSION_TOKEN_KEY, result.session.id);
+
+  if (result.refreshToken) {
+    await SecureStore.setItemAsync(KLYDE_REFRESH_TOKEN_KEY, result.refreshToken);
+  }
+}
+
+async function withKlydeClient<T>(operation: (client: KlydeClient) => Promise<T>): Promise<T> {
+  const client = await getKlydeClient();
+
+  try {
+    return await operation(client);
+  } catch (error) {
+    if (!isRecoverableKlydeSessionError(error)) {
+      throw error;
+    }
+
+    try {
+      const assertion = await requestKlydeHostAppAssertion();
+      await client.auth.bootstrapHostAppSession({
+        assertion,
+        deviceName: 'Paayee mobile',
+      });
+    } catch (restoreError) {
+      throw new Error(`Could not restore Klyde session: ${readErrorMessage(restoreError)}`);
+    }
+
+    try {
+      return await operation(client);
+    } catch (retryError) {
+      throw new Error(`Klyde session was restored, but the request still failed: ${readErrorMessage(retryError)}`);
+    }
+  }
+}
+
+function assertRealKlydeIntegrationsEnabled(): void {
+  if (!runtimeConfig.realIntegrationsEnabled) {
+    throw new Error('Klyde integrations are disabled for this build.');
+  }
+}
+
+function setSecureStoreValue(key: string, value: string | undefined): Promise<void> {
+  if (!value) {
+    return SecureStore.deleteItemAsync(key);
+  }
+
+  return SecureStore.setItemAsync(key, value);
+}
+
+async function getSecureStoreValue(key: string): Promise<string | undefined> {
+  return (await SecureStore.getItemAsync(key)) ?? undefined;
+}
+
+function isRecoverableKlydeSessionError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('code' in error)) {
+    return false;
+  }
+
+  const code = (error as { code?: unknown }).code;
+
+  return (
+    code === 'KYLDE_SESSION_MISSING' ||
+    code === 'KYLDE_REFRESH_TOKEN_EXPIRED' ||
+    code === 'KYLDE_REFRESH_TOKEN_REVOKED'
   );
+}
+
+function readErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }

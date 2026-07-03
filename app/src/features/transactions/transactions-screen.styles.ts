@@ -17,8 +17,8 @@ export const styles = StyleSheet.create({
   title: {
     color: Colors.light.black,
     fontFamily: Fonts.demi,
-    fontSize: 40,
-    lineHeight: 46,
+    fontSize: 28,
+    lineHeight: 34,
   },
   insightButton: {
     minHeight: 40,
@@ -80,6 +80,26 @@ export const styles = StyleSheet.create({
   },
   transactionList: {
     gap: 22,
+  },
+  rowAvatarSkeleton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
+  rowTitleSkeleton: {
+    width: '72%',
+    height: 19,
+    borderRadius: 10,
+  },
+  rowSubtitleSkeleton: {
+    width: '54%',
+    height: 14,
+    borderRadius: 8,
+  },
+  rowAmountSkeleton: {
+    width: 76,
+    height: 19,
+    borderRadius: 10,
   },
   transactionRow: {
     minHeight: 58,
@@ -155,5 +175,40 @@ export const styles = StyleSheet.create({
     color: Colors.light.black,
     fontFamily: Fonts.demi,
     fontSize: 14,
+  },
+  emptyState: {
+    minHeight: 320,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 28,
+    paddingVertical: 32,
+    backgroundColor: Colors.light.white,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  emptyIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.backgroundElement,
+  },
+  emptyTitle: {
+    marginTop: 6,
+    color: Colors.light.black,
+    fontFamily: Fonts.demi,
+    fontSize: 20,
+    lineHeight: 25,
+    textAlign: 'center',
+  },
+  emptyText: {
+    color: Colors.light.textSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
   },
 });

@@ -6,17 +6,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
 import { Colors } from '@/constants/theme';
+import { useAppData } from '@/features/app-data';
 import { setupStyles as styles } from './ngn-account-setup-screen.styles';
 
 type NgnAccountSetupScreenProps = {
   step: 'confirm-name' | 'review';
 };
-
-const userDetails = [
-  { label: 'First name', value: 'jadesola' },
-  { label: 'Middle name', value: 'dami' },
-  { label: 'Last name', value: 'okoro' },
-];
 
 export function NgnAccountSetupScreen({ step }: NgnAccountSetupScreenProps) {
   if (step === 'review') {
@@ -28,6 +23,12 @@ export function NgnAccountSetupScreen({ step }: NgnAccountSetupScreenProps) {
 
 function ConfirmName() {
   const router = useRouter();
+  const { data } = useAppData();
+  const userDetails = [
+    { label: 'First name', value: data?.profile.firstName ?? 'Not provided' },
+    { label: 'Last name', value: data?.profile.lastName || 'Not provided' },
+    { label: 'Email', value: data?.profile.email || 'Not provided' },
+  ];
 
   return (
     <View style={styles.screen}>
@@ -73,6 +74,7 @@ function ConfirmName() {
 
 function AccountReview() {
   const router = useRouter();
+  const { data } = useAppData();
 
   return (
     <View style={styles.screen}>
@@ -84,8 +86,8 @@ function AccountReview() {
             <Text style={styles.kicker}>NGN funding route</Text>
             <Text style={styles.title}>NGN funding route ready</Text>
             <Text style={styles.subtitle}>
-              Use these instructions to add money to your Paayee NGN balance. Paayee
-              updates your balance when the deposit clears.
+              Your Paayee profile is ready for NGN funding. Account instructions will appear here
+              once your funding route is assigned.
             </Text>
 
             <View style={styles.readyCard}>
@@ -100,17 +102,15 @@ function AccountReview() {
               </View>
 
               <View style={styles.instructionList}>
-                <InstructionRow label="Bank" value="Paayee Partner Bank" />
-                <InstructionRow label="Account number" value="908 445 1201" />
-                <InstructionRow label="Account name" value="Paayee / Jadesola Okoro" />
-                <InstructionRow label="Reference" value="PAY-JD-0428" />
+                <InstructionRow label="Account owner" value={data?.profile.name ?? 'Paayee user'} />
+                <InstructionRow label="Status" value="Funding route pending" />
+                <InstructionRow label="Balance" value="NGN" />
               </View>
             </View>
 
             <View style={styles.infoBox}>
               <Text style={styles.infoText}>
-                Use the reference exactly as shown so your balance updates quickly after
-                confirmation.
+                We will show bank details and references here as soon as they are available.
               </Text>
             </View>
           </FadeInView>

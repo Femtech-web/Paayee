@@ -24,7 +24,7 @@ export const assetDetails: Record<AssetCode, AssetDetail> = {
     displayCode: 'NGN',
     title: 'Nigerian Naira',
     balanceLabel: 'Your NGN balance',
-    balance: '₦2,850,000',
+    balance: '₦0.00',
     receiveTitle: 'Receive NGN',
     receiveSubtitle: 'Add money to your Paayee NGN balance',
     depositNote:
@@ -35,12 +35,12 @@ export const assetDetails: Record<AssetCode, AssetDetail> = {
     displayCode: 'USDC',
     title: 'USD Coin',
     balanceLabel: 'Your USDC balance',
-    balance: '$4,280.40',
+    balance: '$0.00',
     receiveTitle: 'Receive USDC',
     receiveSubtitle: 'Fund your private USDC balance',
     depositNote:
       'Only send USDC on Sepolia to this address. Paayee will credit the private balance after confirmation.',
-    address: '0xE7f8AAb397c71a13cB84E86OAD9cBd241665085D',
+    address: '0xE7f8AAb397c71a13cB84E860AD9cBd241665085D',
     networks: [{ label: 'Sepolia', selected: true }],
   },
   usdt: {
@@ -48,12 +48,12 @@ export const assetDetails: Record<AssetCode, AssetDetail> = {
     displayCode: 'USDT',
     title: 'Tether USD',
     balanceLabel: 'Your USDT balance',
-    balance: '$1,840.00',
+    balance: '$0.00',
     receiveTitle: 'Receive USDT',
     receiveSubtitle: 'Fund your private USDT balance',
     depositNote:
       'Only send USDT on Sepolia to this address. Paayee will credit the private balance after confirmation.',
-    address: '0x7Ab6649B81a1c6ddO3f2EC52ED43OBeB93606AEc',
+    address: '0x7Ab6649B81a1c6dd03f2EC52ED430BeB93606AEc',
     networks: [{ label: 'Sepolia', selected: true }],
   },
 };

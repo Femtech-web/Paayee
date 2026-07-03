@@ -73,21 +73,23 @@ export function BankPickerSheet({
 
 export function BalancePickerSheet({
   allowedCodes,
+  assets,
   onClose,
   onSelect,
   open,
   selectedAsset,
 }: {
   allowedCodes?: SendAssetCode[];
+  assets?: SendAssetOption[];
   onClose: () => void;
   onSelect: (asset: SendAssetOption) => void;
   open: boolean;
   selectedAsset: SendAssetOption;
 }) {
   const groups = ['Local money', 'Stablecoins'] as const;
-  const assets = allowedCodes
-    ? sendAssetOptions.filter((asset) => allowedCodes.includes(asset.code))
-    : sendAssetOptions;
+  const availableAssets = allowedCodes
+    ? (assets ?? sendAssetOptions).filter((asset) => allowedCodes.includes(asset.code))
+    : (assets ?? sendAssetOptions);
 
   return (
     <Modal animationType="slide" transparent visible={open} onRequestClose={onClose}>
@@ -104,7 +106,7 @@ export function BalancePickerSheet({
 
           <ScrollView showsVerticalScrollIndicator={false} style={styles.sheetList}>
             {groups.map((group) => {
-              const groupAssets = assets.filter((asset) => asset.group === group);
+              const groupAssets = availableAssets.filter((asset) => asset.group === group);
 
               if (groupAssets.length === 0) {
                 return null;

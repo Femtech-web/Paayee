@@ -1,4 +1,20 @@
-# Welcome to your Expo app 👋
+# Paayee App
+
+## Product Integration Notes
+
+- Klyde owns money sessions, wallets, rails, receipts, and on-chain/private money movement.
+- Paayee owns product metadata: profile fields, Paayee handles, verification details, security preferences, and saved beneficiaries.
+- A new user should get a Klyde-managed wallet/smart account after account setup. Paayee stores the Klyde user/wallet link in Supabase and presents it as the Paayee account.
+- Main app screens read through `src/features/app-data`, so UI screens do not directly juggle Klyde and Supabase details.
+- Current live-data state:
+  - Home reads the real Paayee profile, Klyde wallet snapshot, Klyde balances, Klyde receipt-backed history, Klyde recent rail recipients, and Supabase beneficiaries.
+  - Balance rows are normalized from `getWalletSnapshot({ baseCurrency: "NGN" })` with zero rows preserved for supported empty balances.
+  - The private balance total is NGN-first for Nigeria launch: use Klyde valuation when available and fall back to the actual NGN balance when rates are unavailable.
+  - Transactions read from `listTransactions()` and fall back to a polished empty state when the user has no receipts yet.
+- Profile/security wiring:
+  - Change email uses Supabase verified email update.
+  - Account verification writes identity/contact/residence details to Supabase profile metadata.
+  - Change PIN verifies the current local PIN, then stores a new salted verifier in SecureStore.
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 

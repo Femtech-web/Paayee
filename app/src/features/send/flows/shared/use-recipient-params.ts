@@ -11,6 +11,7 @@ export function useRecipientParams(
     bank?: string;
     initials?: string;
     name?: string;
+    wallet?: string;
   }>();
   const name = readParam(params.name) || fallbackRecipient.name;
 
@@ -21,6 +22,7 @@ export function useRecipientParams(
     accountNumber: readParam(params.account) || fallbackRecipient.accountNumber,
     handle: fallbackRecipient.handle,
     initials: readParam(params.initials) || fallbackRecipient.initials,
+    walletAddress: readParam(params.wallet) || fallbackRecipient.walletAddress,
     firstName: name.split(' ')[0] || 'recipient',
   };
 }

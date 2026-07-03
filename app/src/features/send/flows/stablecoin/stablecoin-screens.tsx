@@ -1,11 +1,12 @@
 import { Feather } from '@react-native-vector-icons/feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { FadeInView } from '@/components/motion/fade-in-view';
+import { useAppData } from '@/features/app-data';
 import {
-  sendAssetOptions,
+  createSendAssetOptionsFromBalances,
   stablecoinNetworks,
   type SendAssetCode,
   type SendAssetOption,
@@ -29,9 +30,6 @@ import {
 } from '../shared/send-utils';
 
 const stablecoinAssetCodes: SendAssetCode[] = ['USDC', 'USDT'];
-const stablecoinAssets = sendAssetOptions.filter((asset) =>
-  stablecoinAssetCodes.includes(asset.code),
-);
 const sampleWalletAddress = '0xa4bb6b63c0ece648ec39daca29bc569236bda6f1';
 
 function StablecoinCurrencyField({
@@ -54,7 +52,14 @@ function StablecoinCurrencyField({
 
 export function NewStablecoinWalletScreen() {
   const router = useRouter();
-  const [asset, setAsset] = useState<SendAssetOption>(defaultStableAsset);
+  const { data } = useAppData();
+  const assets = useMemo(
+    () => createSendAssetOptionsFromBalances(data?.balances),
+    [data?.balances],
+  );
+  const stableAssets = assets.filter((item) => stablecoinAssetCodes.includes(item.code));
+  const [assetCode, setAssetCode] = useState<SendAssetCode>(defaultStableAsset.code);
+  const asset = stableAssets.find((item) => item.code === assetCode) ?? defaultStableAsset;
   const [network, setNetwork] = useState<StablecoinNetworkOption | null>(null);
   const [address, setAddress] = useState('');
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
@@ -127,10 +132,11 @@ export function NewStablecoinWalletScreen() {
 
       <BalancePickerSheet
         allowedCodes={stablecoinAssetCodes}
+        assets={assets}
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
         onSelect={(nextAsset) => {
-          setAsset(nextAsset);
+          setAssetCode(nextAsset.code);
           setAssetPickerOpen(false);
         }}
         selectedAsset={asset}
@@ -151,8 +157,13 @@ export function NewStablecoinWalletScreen() {
 
 export function StablecoinWalletAmountScreen() {
   const params = useLocalSearchParams<{ asset?: SendAssetCode }>();
-  const paramAsset = findAsset(readParam(params.asset) as SendAssetCode | undefined);
-  const selectedAsset = stablecoinAssets.includes(paramAsset) ? paramAsset : defaultStableAsset;
+  const { data } = useAppData();
+  const assets = useMemo(
+    () => createSendAssetOptionsFromBalances(data?.balances),
+    [data?.balances],
+  );
+  const paramAsset = findAsset(readParam(params.asset) as SendAssetCode | undefined, assets);
+  const selectedAsset = stablecoinAssetCodes.includes(paramAsset.code) ? paramAsset : defaultStableAsset;
 
   return (
     <SharedAmountScreen

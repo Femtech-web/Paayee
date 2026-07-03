@@ -30,6 +30,11 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  avatarSkeleton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
   headerActions: {
     flexDirection: 'row',
     gap: 10,
@@ -60,6 +65,17 @@ export const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     fontFamily: Fonts.medium,
     fontSize: 12,
+  },
+  balancePillSkeleton: {
+    width: 126,
+    height: 31,
+    borderRadius: 12,
+  },
+  balanceAmountSkeleton: {
+    width: 168,
+    height: 50,
+    borderRadius: 18,
+    marginTop: 12,
   },
   balanceRow: {
     width: '100%',
@@ -267,6 +283,22 @@ export const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
   },
+  balanceCardIconSkeleton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  balanceCardNameSkeleton: {
+    width: 104,
+    height: 18,
+    borderRadius: 8,
+  },
+  balanceCardCodeSkeleton: {
+    width: 42,
+    height: 14,
+    borderRadius: 7,
+    marginTop: 6,
+  },
   balanceCardName: {
     color: Colors.light.black,
     fontFamily: Fonts.demi,
@@ -285,17 +317,34 @@ export const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 28,
   },
+  balanceCardAmountSkeleton: {
+    width: 132,
+    height: 30,
+    borderRadius: 10,
+    marginTop: 28,
+  },
   balanceCardLabel: {
     marginTop: 6,
     color: Colors.light.textSecondary,
     fontFamily: Fonts.sans,
     fontSize: 12,
   },
+  balanceCardLabelSkeleton: {
+    width: 118,
+    height: 14,
+    borderRadius: 7,
+    marginTop: 10,
+  },
   recentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 2,
+  },
+  seeAllButton: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingLeft: 16,
   },
   seeAll: {
     color: Colors.light.primary,
@@ -308,6 +357,21 @@ export const styles = StyleSheet.create({
     backgroundColor: Colors.light.white,
     borderWidth: 1,
     borderColor: Colors.light.border,
+  },
+  emptyActivity: {
+    minHeight: 82,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  emptyActivityIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.backgroundElement,
   },
   activityRow: {
     minHeight: 74,

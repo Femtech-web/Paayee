@@ -8,35 +8,13 @@ import UsdcLogo from '../../../assets/icons/usdc.svg';
 import UsdtLogo from '../../../assets/icons/usdt.svg';
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
+import { SkeletonBlock } from '@/components/loading/skeleton';
 import { Avatar } from '@/components/ui/avatar';
 import { Colors } from '@/constants/theme';
+import { useAppData, type AppBalance } from '@/features/app-data';
 import { styles } from './home-screen.styles';
 
 const nigeriaFlag = require('../../../assets/images/nigeria.png');
-
-const assets = [
-  {
-    code: 'NGN',
-    name: 'Nigerian Naira',
-    label: 'Klyde sandbox rail',
-    amount: '₦2,850,000',
-    icon: 'ngn',
-  },
-  {
-    code: 'USDC',
-    name: 'USD Coin',
-    label: 'Private dollar balance',
-    amount: '$4,280.40',
-    icon: 'usdc',
-  },
-  {
-    code: 'USDT',
-    name: 'Tether USD',
-    label: 'Private tether balance',
-    amount: '$1,840.00',
-    icon: 'usdt',
-  },
-] as const;
 
 const quickActions = [
   { label: 'Add money', icon: 'plus' },
@@ -44,15 +22,12 @@ const quickActions = [
   { label: 'Chat', icon: 'message-circle' },
 ] as const;
 
-const recentTransactions = [
-  { name: 'Ada Lin', detail: 'Private receipt ready', amount: '-200 USDC' },
-  { name: 'Klyde funding', detail: 'NGN rail confirmed', amount: '+50,000 NGN' },
-  { name: '0x7B8...42F1', detail: 'Recipient decrypted', amount: '-85 USDT' },
-];
-
 export function HomeScreen() {
   const [balanceVisible, setBalanceVisible] = useState(true);
+  const { data, loading } = useAppData();
   const router = useRouter();
+  const balances = data?.balances ?? [];
+  const transactions = data?.transactions ?? [];
 
   return (
     <View style={styles.screen}>
@@ -62,9 +37,13 @@ export function HomeScreen() {
           contentContainerStyle={styles.scrollContent}>
           <View style={styles.shell}>
             <FadeInView style={styles.header}>
-              <View style={styles.identity}>
-                <Avatar initials="jd" />
-              </View>
+              <PressableScale
+                accessibilityRole="button"
+                accessibilityLabel="Open your profile"
+                onPress={() => router.push('/profile/details' as Href)}
+                style={styles.identity}>
+                {loading ? <SkeletonBlock style={styles.avatarSkeleton} /> : <Avatar initials={data?.profile.initials ?? 'PY'} />}
+              </PressableScale>
 
               <View style={styles.headerActions}>
                 <PressableScale style={[styles.iconButton, styles.iconButtonTint]}>
@@ -73,31 +52,33 @@ export function HomeScreen() {
               </View>
             </FadeInView>
 
-            <FadeInView delay={60} style={styles.balanceBlock}>
-              <Text style={styles.balancePill}>Private balance</Text>
-              <View style={styles.balanceRow}>
-                {balanceVisible ? (
-                  <Text style={styles.balance}>
-                    <Text style={styles.balanceCurrency}>$</Text>
-                    4,280
-                    <Text style={styles.balanceDecimal}>.40</Text>
-                  </Text>
-                ) : (
-                  <Text style={styles.balanceHidden}>••••••</Text>
-                )}
-                <Pressable
-                  onPress={() => setBalanceVisible((visible) => !visible)}
-                  style={styles.balanceToggle}
-                  accessibilityRole="button"
-                  accessibilityLabel={balanceVisible ? 'Hide balance' : 'Show balance'}>
-                  <Feather
-                    name={balanceVisible ? 'eye-off' : 'eye'}
-                    size={17}
-                    color={Colors.light.primary}
-                  />
-                </Pressable>
-              </View>
-            </FadeInView>
+            {loading ? (
+              <HomeLoadingState />
+            ) : (
+              <FadeInView delay={60} style={styles.balanceBlock}>
+                <Text style={styles.balancePill}>Total private balance</Text>
+                <View style={styles.balanceRow}>
+                  {balanceVisible ? (
+                    <Text style={styles.balance}>
+                      {data?.totalDisplay ?? '₦0.00'}
+                    </Text>
+                  ) : (
+                    <Text style={styles.balanceHidden}>••••••</Text>
+                  )}
+                  <Pressable
+                    onPress={() => setBalanceVisible((visible) => !visible)}
+                    style={styles.balanceToggle}
+                    accessibilityRole="button"
+                    accessibilityLabel={balanceVisible ? 'Hide balance' : 'Show balance'}>
+                    <Feather
+                      name={balanceVisible ? 'eye-off' : 'eye'}
+                      size={17}
+                      color={Colors.light.primary}
+                    />
+                  </Pressable>
+                </View>
+              </FadeInView>
+            )}
 
             <FadeInView delay={110} style={styles.cardStage}>
               <View style={styles.backCard} />
@@ -147,49 +128,59 @@ export function HomeScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.balanceCardsContent}
                 style={styles.balanceCards}>
-                {assets.map((asset) => (
-                  <PressableScale
-                    key={asset.code}
-                    onPress={() => router.push(`/asset/${asset.code.toLowerCase()}` as Href)}
-                    style={styles.balanceCard}>
-                    <View style={styles.balanceCardHeader}>
-                      <View style={styles.assetOrb}>
-                        {asset.icon === 'ngn' ? (
-                          <Image source={nigeriaFlag} style={styles.assetImage} />
-                        ) : asset.icon === 'usdc' ? (
-                          <UsdcLogo width={42} height={42} />
-                        ) : (
-                          <UsdtLogo width={42} height={42} />
-                        )}
-                      </View>
-                      <View>
-                        <Text style={styles.balanceCardName}>{asset.name}</Text>
-                        <Text style={styles.balanceCardCode}>{asset.code}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.balanceCardAmount}>
-                      {balanceVisible ? asset.amount : '••••'}
-                    </Text>
-                    <Text style={styles.balanceCardLabel}>{asset.label}</Text>
-                  </PressableScale>
-                ))}
+                {loading ? (
+                  <BalanceCardsLoading />
+                ) : (
+                  balances.map((asset) => (
+                    <PressableScale
+                      key={asset.code}
+                      onPress={() => router.push(`/asset/${asset.code.toLowerCase()}` as Href)}
+                      style={styles.balanceCard}>
+                      <BalanceCardHeader asset={asset} />
+                      <Text style={styles.balanceCardAmount}>
+                        {balanceVisible ? asset.displayAmount : '••••'}
+                      </Text>
+                      <Text style={styles.balanceCardLabel}>{asset.label}</Text>
+                    </PressableScale>
+                  ))
+                )}
               </ScrollView>
             </FadeInView>
 
             <FadeInView delay={280} style={styles.recentHeader}>
               <Text style={styles.sectionEyebrow}>Recent transactions</Text>
-              <Text style={styles.seeAll}>See all</Text>
+              <PressableScale
+                accessibilityRole="button"
+                accessibilityLabel="See all transactions"
+                onPress={() => router.push('/transactions' as Href)}
+                style={styles.seeAllButton}>
+                <Text style={styles.seeAll}>See all</Text>
+              </PressableScale>
             </FadeInView>
 
             <FadeInView delay={310} style={styles.activityList}>
-              {recentTransactions.map((item) => (
-                <View key={`${item.name}-${item.amount}`} style={styles.activityRow}>
+              {transactions.length ? (
+                transactions.map((item) => (
+                <PressableScale
+                  key={item.id}
+                  onPress={() => {
+                    const receiptParam = item.receiptId
+                      ? `&receiptId=${encodeURIComponent(item.receiptId)}`
+                      : '';
+
+                    router.push(
+                      `/transaction/${encodeURIComponent(item.id)}?kind=${item.kind}${receiptParam}` as Href,
+                    );
+                  }}
+                  style={styles.activityRow}>
                   <View style={styles.activityAvatar}>
-                    <Text style={styles.activityInitial}>{item.name.slice(0, 1)}</Text>
+                    <Text style={styles.activityInitial}>
+                      {(item.initials ?? item.title.slice(0, 1)).toUpperCase()}
+                    </Text>
                   </View>
                   <View style={styles.activityCopy}>
-                    <Text style={styles.activityName}>{item.name}</Text>
-                    <Text style={styles.activityDetail}>{item.detail}</Text>
+                    <Text numberOfLines={1} style={styles.activityName}>{item.title}</Text>
+                    <Text numberOfLines={1} style={styles.activityDetail}>{item.detail}</Text>
                   </View>
                   <Text
                     style={[
@@ -199,12 +190,78 @@ export function HomeScreen() {
                     ]}>
                     {item.amount}
                   </Text>
-                </View>
-              ))}
+                </PressableScale>
+                ))
+              ) : (
+                <EmptyActivityState />
+              )}
             </FadeInView>
           </View>
         </ScrollView>
       </SafeAreaView>
+    </View>
+  );
+}
+
+function BalanceCardHeader({ asset }: { asset: AppBalance }) {
+  return (
+    <View style={styles.balanceCardHeader}>
+      <View style={styles.assetOrb}>
+        {asset.icon === 'ngn' ? (
+          <Image source={nigeriaFlag} style={styles.assetImage} />
+        ) : asset.icon === 'usdc' ? (
+          <UsdcLogo width={42} height={42} />
+        ) : (
+          <UsdtLogo width={42} height={42} />
+        )}
+      </View>
+      <View>
+        <Text style={styles.balanceCardName}>{asset.name}</Text>
+        <Text style={styles.balanceCardCode}>{asset.code}</Text>
+      </View>
+    </View>
+  );
+}
+
+function HomeLoadingState() {
+  return (
+    <FadeInView delay={60} style={styles.balanceBlock}>
+      <SkeletonBlock style={styles.balancePillSkeleton} />
+      <SkeletonBlock style={styles.balanceAmountSkeleton} />
+    </FadeInView>
+  );
+}
+
+function BalanceCardsLoading() {
+  return (
+    <>
+      {[0, 1, 2].map((index) => (
+        <View key={index} style={styles.balanceCard}>
+          <View style={styles.balanceCardHeader}>
+            <SkeletonBlock style={styles.balanceCardIconSkeleton} />
+            <View>
+              <SkeletonBlock style={styles.balanceCardNameSkeleton} />
+              <SkeletonBlock style={styles.balanceCardCodeSkeleton} />
+            </View>
+          </View>
+          <SkeletonBlock style={styles.balanceCardAmountSkeleton} />
+          <SkeletonBlock style={styles.balanceCardLabelSkeleton} />
+        </View>
+      ))}
+    </>
+  );
+}
+
+function EmptyActivityState() {
+  return (
+    <View style={styles.emptyActivity}>
+      <View style={styles.emptyActivityIcon}>
+        <Feather name="activity" size={20} color={Colors.light.textSecondary} />
+      </View>
+      <View style={styles.activityCopy}>
+        <Text style={styles.activityName}>No transactions yet</Text>
+        <Text style={styles.activityDetail}>Your first deposit or send will appear here.</Text>
+      </View>
     </View>
   );
 }

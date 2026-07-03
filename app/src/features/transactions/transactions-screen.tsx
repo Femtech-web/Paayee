@@ -1,92 +1,20 @@
 import { Feather } from '@react-native-vector-icons/feather';
+import { type Href, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
+import { SkeletonBlock } from '@/components/loading/skeleton';
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
 import { Avatar } from '@/components/ui/avatar';
 import { Screen } from '@/components/ui/screen';
 import { Colors } from '@/constants/theme';
+import { useAppData, type AppTransaction } from '@/features/app-data';
 import { styles } from './transactions-screen.styles';
 
-type Transaction = {
-  amount: string;
-  detail: string;
-  icon?: 'arrow-down-left' | 'eye' | 'repeat' | 'shield' | 'trending-up';
-  initials?: string;
-  secondaryAmount?: string;
-  title: string;
-  tone?: 'negative' | 'positive' | 'receipt';
-  when: string;
-};
+const INITIAL_VISIBLE_TRANSACTIONS = 10;
 
-const transactions: Transaction[] = [
-  {
-    initials: 'al',
-    title: 'Ada Lin',
-    detail: 'Private receipt ready',
-    amount: '-200 USDC',
-    tone: 'negative',
-    when: 'Today',
-  },
-  {
-    icon: 'repeat',
-    title: 'NGN to USDC',
-    detail: 'Klyde rail settled',
-    amount: '$909.46',
-    secondaryAmount: '₦1,246,160.45',
-    when: 'Today',
-  },
-  {
-    icon: 'shield',
-    title: 'USDC private send',
-    detail: 'Encrypted transfer',
-    amount: '-USDC 200.00',
-    tone: 'negative',
-    when: '24 June 2026',
-  },
-  {
-    initials: 'ud',
-    title: 'USDC deposit',
-    detail: 'Received privately',
-    amount: '+USDC 911.28',
-    tone: 'positive',
-    when: '24 June 2026',
-  },
-  {
-    initials: 'ao',
-    title: 'Akolade Adeyemi',
-    detail: 'NGN sandbox payout',
-    amount: '-₦50,000',
-    tone: 'negative',
-    when: '14 June 2026',
-  },
-  {
-    initials: 'to',
-    title: 'Tobi Okoro',
-    detail: 'Voice send confirmed',
-    amount: '-₦12,035',
-    tone: 'negative',
-    when: '3 June 2026',
-  },
-  {
-    initials: 'mk',
-    title: 'Mina K',
-    detail: 'Recipient decrypted',
-    amount: '-85 USDT',
-    tone: 'negative',
-    when: '3 June 2026',
-  },
-  {
-    icon: 'eye',
-    title: 'Selective reveal',
-    detail: 'Receipt proof opened',
-    amount: 'Receipt',
-    tone: 'receipt',
-    when: '2 June 2026',
-  },
-];
-
-function TransactionAvatar({ transaction }: { transaction: Transaction }) {
+function TransactionAvatar({ transaction }: { transaction: AppTransaction }) {
   if (transaction.initials) {
     return <Avatar initials={transaction.initials} size={52} />;
   }
@@ -99,6 +27,13 @@ function TransactionAvatar({ transaction }: { transaction: Transaction }) {
 }
 
 export function TransactionsScreen() {
+  const router = useRouter();
+  const { data, loading } = useAppData();
+  const transactions = data?.transactions ?? [];
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_TRANSACTIONS);
+  const visibleTransactions = transactions.slice(0, visibleCount);
+  const canLoadMore = transactions.length > visibleTransactions.length;
+
   return (
     <Screen contentStyle={styles.content}>
       <FadeInView style={styles.header}>
@@ -130,46 +65,114 @@ export function TransactionsScreen() {
       </FadeInView>
 
       <View style={styles.transactionList}>
-        {transactions.map((transaction, index) => (
-          <FadeInView
-            delay={140 + index * 26}
-            key={`${transaction.title}-${transaction.amount}-${transaction.when}`}
-            style={styles.transactionRow}>
-            <TransactionAvatar transaction={transaction} />
-            <View style={styles.transactionCopy}>
-              <Text numberOfLines={1} style={styles.transactionTitle}>
-                {transaction.title}
-              </Text>
-              <Text numberOfLines={1} style={styles.transactionDetail}>
-                {transaction.detail} · {transaction.when}
-              </Text>
-            </View>
-            <View style={styles.amountBlock}>
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.transactionAmount,
-                  transaction.tone === 'positive' && styles.amountPositive,
-                  transaction.tone === 'negative' && styles.amountNegative,
-                  transaction.tone === 'receipt' && styles.amountReceipt,
-                ]}>
-                {transaction.amount}
-              </Text>
-              {transaction.secondaryAmount ? (
-                <Text numberOfLines={1} style={styles.secondaryAmount}>
-                  {transaction.secondaryAmount}
-                </Text>
-              ) : null}
-            </View>
-          </FadeInView>
-        ))}
+        {loading ? (
+          <TransactionsSkeleton />
+        ) : visibleTransactions.length ? (
+          visibleTransactions.map((transaction, index) => (
+            <TransactionRow
+              key={transaction.id}
+              index={index}
+              onPress={() => {
+                const receiptParam = transaction.receiptId
+                  ? `&receiptId=${encodeURIComponent(transaction.receiptId)}`
+                  : '';
+
+                router.push(
+                  `/transaction/${encodeURIComponent(transaction.id)}?kind=${transaction.kind}${receiptParam}` as Href,
+                );
+              }}
+              transaction={transaction}
+            />
+          ))
+        ) : (
+          <EmptyTransactionsState />
+        )}
       </View>
 
-      <FadeInView delay={410}>
-        <PressableScale style={styles.loadMoreButton}>
-          <Text style={styles.loadMoreText}>Load more</Text>
-        </PressableScale>
-      </FadeInView>
+      {canLoadMore ? (
+        <FadeInView delay={410}>
+          <PressableScale
+            onPress={() => setVisibleCount((count) => count + INITIAL_VISIBLE_TRANSACTIONS)}
+            style={styles.loadMoreButton}>
+            <Text style={styles.loadMoreText}>Load more</Text>
+          </PressableScale>
+        </FadeInView>
+      ) : null}
     </Screen>
+  );
+}
+
+function TransactionRow({
+  index,
+  onPress,
+  transaction,
+}: {
+  index: number;
+  onPress: () => void;
+  transaction: AppTransaction;
+}) {
+  return (
+    <FadeInView delay={140 + index * 26}>
+      <PressableScale onPress={onPress} style={styles.transactionRow}>
+        <TransactionAvatar transaction={transaction} />
+        <View style={styles.transactionCopy}>
+          <Text numberOfLines={1} style={styles.transactionTitle}>
+            {transaction.title}
+          </Text>
+          <Text numberOfLines={1} style={styles.transactionDetail}>
+            {transaction.detail} · {transaction.when}
+          </Text>
+        </View>
+        <View style={styles.amountBlock}>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.transactionAmount,
+              transaction.tone === 'positive' && styles.amountPositive,
+              transaction.tone === 'negative' && styles.amountNegative,
+              transaction.tone === 'receipt' && styles.amountReceipt,
+            ]}>
+            {transaction.amount}
+          </Text>
+          {transaction.secondaryAmount ? (
+            <Text numberOfLines={1} style={styles.secondaryAmount}>
+              {transaction.secondaryAmount}
+            </Text>
+          ) : null}
+        </View>
+        <Feather name="chevron-right" size={19} color={Colors.light.textTertiary} />
+      </PressableScale>
+    </FadeInView>
+  );
+}
+
+function TransactionsSkeleton() {
+  return (
+    <>
+      {[0, 1, 2, 3].map((item) => (
+        <View key={item} style={styles.transactionRow}>
+          <SkeletonBlock style={styles.rowAvatarSkeleton} />
+          <View style={styles.transactionCopy}>
+            <SkeletonBlock style={styles.rowTitleSkeleton} />
+            <SkeletonBlock style={styles.rowSubtitleSkeleton} />
+          </View>
+          <SkeletonBlock style={styles.rowAmountSkeleton} />
+        </View>
+      ))}
+    </>
+  );
+}
+
+function EmptyTransactionsState() {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyIcon}>
+        <Feather name="credit-card" size={24} color={Colors.light.textSecondary} />
+      </View>
+      <Text style={styles.emptyTitle}>No transactions yet</Text>
+      <Text style={styles.emptyText}>
+        Add money, send to a recipient, or convert a balance and your history will appear here.
+      </Text>
+    </View>
   );
 }

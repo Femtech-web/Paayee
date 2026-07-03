@@ -10,6 +10,14 @@ export const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  toastOverlay: {
+    position: 'absolute',
+    top: 18,
+    left: Spacing.three,
+    right: Spacing.three,
+    zIndex: 120,
+    elevation: 12,
+  },
   scrollContent: {
     alignItems: 'center',
     paddingHorizontal: Spacing.three,
@@ -77,6 +85,11 @@ export const styles = StyleSheet.create({
     fontSize: 42,
     lineHeight: 52,
   },
+  balanceSkeleton: {
+    width: 184,
+    height: 52,
+    borderRadius: 18,
+  },
   visibilityButton: {
     width: 34,
     height: 34,
@@ -129,39 +142,6 @@ export const styles = StyleSheet.create({
     fontFamily: Fonts.sans,
     fontSize: 16,
     lineHeight: 24,
-  },
-  noticeCard: {
-    borderRadius: 20,
-    padding: 16,
-    flexDirection: 'row',
-    gap: 12,
-    backgroundColor: Colors.light.railSoft,
-    borderWidth: 1,
-    borderColor: '#F2D59A',
-  },
-  noticeIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.light.white,
-  },
-  noticeCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  noticeTitle: {
-    color: Colors.light.black,
-    fontFamily: Fonts.demi,
-    fontSize: 15,
-  },
-  noticeText: {
-    marginTop: 4,
-    color: '#776442',
-    fontFamily: Fonts.sans,
-    fontSize: 14,
-    lineHeight: 21,
   },
   ngnSetupCard: {
     minHeight: 158,
@@ -287,6 +267,10 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DDE3EC',
   },
+  qrSvg: {
+    width: '100%',
+    height: '100%',
+  },
   qrCell: {
     width: '11.111%',
     height: '11.111%',
@@ -345,6 +329,20 @@ export const styles = StyleSheet.create({
     fontFamily: Fonts.sans,
     fontSize: 14,
     lineHeight: 21,
+    textAlign: 'center',
+  },
+  tokenText: {
+    color: '#7B8496',
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: '#D45447',
+    fontFamily: Fonts.medium,
+    fontSize: 13,
+    lineHeight: 19,
     textAlign: 'center',
   },
 });

@@ -7,6 +7,7 @@ import { View } from 'react-native';
 import { AnimatedSplashScreen } from '@/components/brand/animated-splash-screen';
 import { AppTabBar } from '@/components/navigation/app-tab-bar';
 import { Colors } from '@/constants/theme';
+import { SessionGuard } from '@/features/auth';
 
 SplashScreen.preventAutoHideAsync().catch(() => null);
 
@@ -26,6 +27,7 @@ export default function TabLayout() {
           contentStyle: { backgroundColor: Colors.light.background },
         }}
       />
+      <SessionGuard />
       <AppTabBar />
       {!splashFinished ? (
         <AnimatedSplashScreen onFinish={() => setSplashFinished(true)} />

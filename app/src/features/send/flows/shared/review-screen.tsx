@@ -1,11 +1,16 @@
 import { Feather } from '@react-native-vector-icons/feather';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { FadeInView } from '@/components/motion/fade-in-view';
-import { transferPurposes, type SendAssetCode } from '../../send-data';
+import {
+  stablecoinNetworks,
+  transferPurposes,
+  type SendAssetCode,
+} from '../../send-data';
 import { sendStyles as styles } from '../../send-screen.styles';
+import { createLiveSend, type LiveSendMethod } from '../../send-live';
 import { ScreenShell, TopBar } from './send-layout';
 import { FieldLabel, FooterButton, RecipientHeader, SummaryRow } from './send-ui';
 import { findAsset, formatMoney, readParam } from './send-utils';
@@ -13,14 +18,50 @@ import { useRecipientParams } from './use-recipient-params';
 
 export function ReviewSendScreen() {
   const router = useRouter();
+  const pathname = usePathname();
   const recipient = useRecipientParams();
-  const params = useLocalSearchParams<{ amount?: string; asset?: SendAssetCode; fee?: string }>();
+  const params = useLocalSearchParams<{
+    amount?: string;
+    asset?: SendAssetCode;
+    fee?: string;
+    networkId?: string;
+  }>();
   const amount = Number(params.amount ?? 5000);
   const fee = Number(params.fee ?? 35);
   const asset = findAsset(readParam(params.asset) as SendAssetCode | undefined);
+  const network = stablecoinNetworks.find((item) => item.id === readParam(params.networkId));
   const [purpose, setPurpose] = useState<(typeof transferPurposes)[number]>('General');
   const [purposeOpen, setPurposeOpen] = useState(false);
   const [narration, setNarration] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const method = readSendMethod(pathname);
+
+  const sendMoney = async () => {
+    if (submitting) {
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      await createLiveSend({
+        amount,
+        assetCode: asset.code,
+        method,
+        narration,
+        network,
+        purpose,
+        recipient,
+      });
+      router.replace('/send/success');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not complete this transfer.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <ScreenShell>
@@ -70,9 +111,26 @@ export function ReviewSendScreen() {
             style={styles.inputBox}
           />
         </FieldLabel>
+        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
       </FadeInView>
 
-      <FooterButton label="Send money" onPress={() => router.replace('/send/success')} />
+      <FooterButton
+        disabled={submitting}
+        label={submitting ? 'Sending...' : 'Send money'}
+        onPress={sendMoney}
+      />
     </ScreenShell>
   );
+}
+
+function readSendMethod(pathname: string): LiveSendMethod {
+  if (pathname.includes('/stablecoin/')) {
+    return 'stablecoin';
+  }
+
+  if (pathname.includes('/handle/')) {
+    return 'handle';
+  }
+
+  return 'bank';
 }

@@ -1,70 +1,64 @@
 import { Feather } from '@react-native-vector-icons/feather';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Animated, Easing, Modal, Pressable, Text, TextInput, View } from 'react-native';
 
+import { FeedbackToast } from '@/components/feedback-toast';
+import { SkeletonBlock } from '@/components/loading/skeleton';
 import { Avatar } from '@/components/ui/avatar';
 import { Screen } from '@/components/ui/screen';
 import { Colors } from '@/constants/theme';
+import { useAppData, type AppRecipient } from '@/features/app-data';
+import { stablecoinNetworks } from '@/features/send/send-data';
+import { saveCurrentBeneficiary } from '@/integrations/supabase';
 import { styles } from './people-screen.styles';
 
-type Beneficiary = {
-  initials: string;
-  name: string;
-  note: string;
-  rails: string[];
-  lastUsed: string;
-};
-
-const beneficiaries: Beneficiary[] = [
-  {
-    initials: 'al',
-    name: 'Ada Lin',
-    note: '0x8A7c...91F2',
-    rails: ['USDC', 'USDT'],
-    lastUsed: 'Last sent 200 USDC',
-  },
-  {
-    initials: 'to',
-    name: 'Tobi Okoro',
-    note: 'GTBank ending 8421',
-    rails: ['NGN', 'USDC'],
-    lastUsed: 'Voice alias ready',
-  },
-  {
-    initials: 'mk',
-    name: 'Mina K',
-    note: '0x7B8...42F1',
-    rails: ['USDT'],
-    lastUsed: 'Recipient decrypted',
-  },
-  {
-    initials: 'ao',
-    name: 'Akolade Adeyemi',
-    note: 'First Bank ending 3678',
-    rails: ['NGN'],
-    lastUsed: 'Last sent 50,000 NGN',
-  },
-  {
-    initials: 'nt',
-    name: 'Nora Tayo',
-    note: '0x21C...8B40',
-    rails: ['USDC'],
-    lastUsed: 'New recipient',
-  },
-  {
-    initials: 'ik',
-    name: 'Ikenna Udo',
-    note: 'Zenith ending 1042',
-    rails: ['NGN', 'USDT'],
-    lastUsed: 'Last sent 85 USDT',
-  },
-];
-
 const filters = ['All', 'NGN', 'USDC', 'USDT', 'Recent'] as const;
+const INITIAL_VISIBLE_RECIPIENTS = 10;
+const railOptions = [
+  { label: 'NGN bank', value: 'NGN' },
+  { label: 'USDC wallet', value: 'USDC' },
+  { label: 'USDT wallet', value: 'USDT' },
+  { label: 'Paayee handle', value: 'HANDLE' },
+] as const;
+
+type BeneficiaryRail = (typeof railOptions)[number]['value'];
 
 export function PeopleScreen() {
+  const { data, loading, refresh } = useAppData();
+  const beneficiaries = data?.recipients ?? [];
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_RECIPIENTS);
+  const visibleBeneficiaries = beneficiaries.slice(0, visibleCount);
+  const canLoadMore = beneficiaries.length > visibleBeneficiaries.length;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetProgress] = useState(() => new Animated.Value(0));
+  const [selectedRail, setSelectedRail] = useState<BeneficiaryRail>('NGN');
+  const [selectedNetworkId, setSelectedNetworkId] = useState(stablecoinNetworks[0]?.id ?? '');
+  const [displayName, setDisplayName] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [walletAddress, setWalletAddress] = useState('');
+  const [handle, setHandle] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [sheetError, setSheetError] = useState('');
+  const [sheetSuccess, setSheetSuccess] = useState('');
+  const selectedNetwork = useMemo(
+    () => stablecoinNetworks.find((network) => network.id === selectedNetworkId) ?? stablecoinNetworks[0],
+    [selectedNetworkId],
+  );
+
+  useEffect(() => {
+    if (!sheetError && !sheetSuccess) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setSheetError('');
+      setSheetSuccess('');
+    }, 3800);
+
+    return () => clearTimeout(timeout);
+  }, [sheetError, sheetSuccess]);
 
   const openSheet = () => {
     setSheetOpen(true);
@@ -85,8 +79,60 @@ export function PeopleScreen() {
     }).start(({ finished }) => {
       if (finished) {
         setSheetOpen(false);
+        resetForm();
       }
     });
+  };
+
+  const resetForm = () => {
+    setDisplayName('');
+    setBankName('');
+    setAccountNumber('');
+    setAccountName('');
+    setWalletAddress('');
+    setHandle('');
+    setSelectedNetworkId(stablecoinNetworks[0]?.id ?? '');
+    setSheetError('');
+    setSheetSuccess('');
+  };
+
+  const saveBeneficiary = async () => {
+    if (saving || !canSaveBeneficiary(selectedRail, displayName, {
+      accountName,
+      accountNumber,
+      bankName,
+      handle,
+      networkId: selectedNetwork?.id ?? '',
+      walletAddress,
+    })) {
+      return;
+    }
+
+    setSaving(true);
+    setSheetError('');
+    setSheetSuccess('');
+
+    try {
+      await saveCurrentBeneficiary({
+        accountName: selectedRail === 'NGN' ? accountName : undefined,
+        accountNumber: selectedRail === 'NGN' ? accountNumber : undefined,
+        bankName: selectedRail === 'NGN' ? bankName : undefined,
+        chainId: selectedRail === 'USDC' || selectedRail === 'USDT' ? selectedNetwork?.chainId : undefined,
+        displayName,
+        handle: selectedRail === 'HANDLE' ? handle : undefined,
+        networkId: selectedRail === 'USDC' || selectedRail === 'USDT' ? selectedNetwork?.id : undefined,
+        networkName: selectedRail === 'USDC' || selectedRail === 'USDT' ? selectedNetwork?.name : undefined,
+        preferredAsset: selectedRail === 'HANDLE' ? undefined : selectedRail,
+        walletAddress: selectedRail === 'USDC' || selectedRail === 'USDT' ? walletAddress : undefined,
+      });
+      setSheetSuccess('Recipient saved.');
+      await refresh();
+      setTimeout(closeSheet, 650);
+    } catch (error) {
+      setSheetError(error instanceof Error ? error.message : 'Could not save this recipient.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const sheetTranslateY = sheetProgress.interpolate({
@@ -142,39 +188,25 @@ export function PeopleScreen() {
           ))}
         </View>
 
-        <Text style={styles.sectionLabel}>All beneficiaries</Text>
+        <Text style={styles.sectionLabel}>Saved recipients</Text>
         <View style={styles.list}>
-          {beneficiaries.map((person) => (
-            <Pressable key={person.name} style={styles.personRow}>
-              <Avatar initials={person.initials} size={52} />
-              <View style={styles.personCopy}>
-                <Text style={styles.personName} numberOfLines={1}>
-                  {person.name}
-                </Text>
-                <Text style={styles.personNote} numberOfLines={1}>
-                  {person.note}
-                </Text>
-                <View style={styles.railRow}>
-                  {person.rails.map((rail) => (
-                    <Text key={`${person.name}-${rail}`} style={styles.railPill}>
-                      {rail}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-              <View style={styles.personMeta}>
-                <Text style={styles.lastUsed} numberOfLines={2}>
-                  {person.lastUsed}
-                </Text>
-                <Feather name="chevron-right" size={18} color={Colors.light.textTertiary} />
-              </View>
-            </Pressable>
-          ))}
+          {loading ? (
+            <PeopleSkeleton />
+          ) : visibleBeneficiaries.length ? (
+            visibleBeneficiaries.map((person) => <RecipientRow key={person.id} person={person} />)
+          ) : (
+            <EmptyPeopleState onAdd={openSheet} />
+          )}
         </View>
 
-        <Pressable accessibilityRole="button" style={styles.loadMoreButton}>
-          <Text style={styles.loadMoreText}>Load more</Text>
-        </Pressable>
+        {canLoadMore ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setVisibleCount((count) => count + INITIAL_VISIBLE_RECIPIENTS)}
+            style={styles.loadMoreButton}>
+            <Text style={styles.loadMoreText}>Load more</Text>
+          </Pressable>
+        ) : null}
       </Screen>
 
       <Modal animationType="none" onRequestClose={closeSheet} transparent visible={sheetOpen}>
@@ -205,40 +237,274 @@ export function PeopleScreen() {
             <View style={styles.sheetDivider} />
 
             <Text style={styles.sheetIntro}>
-              Save a name once, then Paayee can match it safely in chat or voice.
+              Save bank accounts, wallet addresses, or Paayee handles you send to often.
             </Text>
+
+            <FeedbackToast floating message={sheetError} tone="error" />
+            <FeedbackToast floating message={sheetSuccess} tone="success" />
+
+            <View style={styles.railSelector}>
+              {railOptions.map((rail) => (
+                <Pressable
+                  key={rail.value}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setSelectedRail(rail.value);
+                    setSheetError('');
+                    setSheetSuccess('');
+                  }}
+                  style={[
+                    styles.railChoice,
+                    selectedRail === rail.value && styles.railChoiceActive,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.railChoiceText,
+                      selectedRail === rail.value && styles.railChoiceTextActive,
+                    ]}>
+                    {rail.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
 
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Display name</Text>
-              <View style={styles.fieldBox}>
-                <Text style={styles.fieldPlaceholder}>Ada Lin</Text>
-              </View>
+              <TextInput
+                autoCapitalize="words"
+                onChangeText={setDisplayName}
+                placeholder="Ada Lin"
+                placeholderTextColor={Colors.light.textTertiary}
+                style={styles.fieldInput}
+                value={displayName}
+              />
             </View>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Wallet or NGN rail</Text>
-              <View style={styles.fieldBox}>
-                <Text style={styles.fieldPlaceholder}>0x8A7c...91F2 or bank details</Text>
-              </View>
-            </View>
+            {selectedRail === 'NGN' ? (
+              <>
+                <SheetField label="Bank name" onChangeText={setBankName} placeholder="GTBank" value={bankName} />
+                <SheetField
+                  keyboardType="number-pad"
+                  label="Account number"
+                  onChangeText={setAccountNumber}
+                  placeholder="0123456789"
+                  value={accountNumber}
+                />
+                <SheetField
+                  label="Account name"
+                  onChangeText={setAccountName}
+                  placeholder="Ada Lin"
+                  value={accountName}
+                />
+              </>
+            ) : selectedRail === 'HANDLE' ? (
+              <SheetField
+                autoCapitalize="none"
+                label="Paayee handle"
+                onChangeText={setHandle}
+                placeholder="@adalin"
+                value={handle}
+              />
+            ) : (
+              <>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Network</Text>
+                  <View style={styles.networkSelector}>
+                    {stablecoinNetworks.map((network) => (
+                      <Pressable
+                        key={network.id}
+                        accessibilityRole="button"
+                        onPress={() => setSelectedNetworkId(network.id)}
+                        style={[
+                          styles.networkChoice,
+                          selectedNetwork?.id === network.id && styles.networkChoiceActive,
+                        ]}>
+                        <Feather
+                          name="link"
+                          size={15}
+                          color={
+                            selectedNetwork?.id === network.id
+                              ? Colors.light.primary
+                              : Colors.light.textTertiary
+                          }
+                        />
+                        <Text
+                          style={[
+                            styles.networkChoiceText,
+                            selectedNetwork?.id === network.id && styles.networkChoiceTextActive,
+                          ]}>
+                          {network.shortName}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+                <SheetField
+                  autoCapitalize="none"
+                  label={`${selectedRail} wallet address`}
+                  onChangeText={setWalletAddress}
+                  placeholder="0x8A7c...91F2"
+                  value={walletAddress}
+                />
+              </>
+            )}
 
-            <View style={styles.sheetOption}>
-              <View style={styles.sheetOptionIcon}>
-                <Feather name="mic" size={18} color={Colors.light.primary} />
-              </View>
-              <View style={styles.sheetOptionCopy}>
-                <Text style={styles.sheetOptionTitle}>Voice alias</Text>
-                <Text style={styles.sheetOptionText}>Paayee will still confirm every payment.</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={Colors.light.textTertiary} />
-            </View>
-
-            <Pressable accessibilityRole="button" style={styles.sheetPrimaryButton}>
-              <Text style={styles.sheetPrimaryText}>Save beneficiary</Text>
+            <Pressable
+              accessibilityRole="button"
+              disabled={
+                saving ||
+                !canSaveBeneficiary(selectedRail, displayName, {
+                  accountName,
+                  accountNumber,
+                  bankName,
+                  handle,
+                  networkId: selectedNetwork?.id ?? '',
+                  walletAddress,
+                })
+              }
+              onPress={saveBeneficiary}
+              style={[
+                styles.sheetPrimaryButton,
+                (saving ||
+                  !canSaveBeneficiary(selectedRail, displayName, {
+                    accountName,
+                    accountNumber,
+                    bankName,
+                    handle,
+                    networkId: selectedNetwork?.id ?? '',
+                    walletAddress,
+                  })) &&
+                  styles.sheetPrimaryButtonDisabled,
+              ]}>
+              <Text style={styles.sheetPrimaryText}>{saving ? 'Saving...' : 'Save beneficiary'}</Text>
             </Pressable>
           </Animated.View>
         </View>
       </Modal>
     </>
+  );
+}
+
+function SheetField({
+  autoCapitalize = 'sentences',
+  keyboardType,
+  label,
+  onChangeText,
+  placeholder,
+  value,
+}: {
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  keyboardType?: 'default' | 'email-address' | 'number-pad' | 'phone-pad';
+  label: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        autoCapitalize={autoCapitalize}
+        keyboardType={keyboardType}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={Colors.light.textTertiary}
+        style={styles.fieldInput}
+        value={value}
+      />
+    </View>
+  );
+}
+
+function canSaveBeneficiary(
+  rail: BeneficiaryRail,
+  displayName: string,
+  values: {
+    accountName: string;
+    accountNumber: string;
+    bankName: string;
+    handle: string;
+    networkId: string;
+    walletAddress: string;
+  },
+): boolean {
+  if (!displayName.trim()) {
+    return false;
+  }
+
+  if (rail === 'NGN') {
+    return Boolean(
+      values.bankName.trim() &&
+        values.accountNumber.trim().length >= 10 &&
+        values.accountName.trim(),
+    );
+  }
+
+  if (rail === 'HANDLE') {
+    return Boolean(values.handle.trim().replace(/^@+/, ''));
+  }
+
+  return Boolean(values.networkId && /^0x[a-fA-F0-9]{40}$/.test(values.walletAddress.trim()));
+}
+
+function RecipientRow({ person }: { person: AppRecipient }) {
+  return (
+    <Pressable style={styles.personRow}>
+      <Avatar initials={person.initials} size={52} />
+      <View style={styles.personCopy}>
+        <Text style={styles.personName} numberOfLines={1}>
+          {person.name}
+        </Text>
+        <Text style={styles.personNote} numberOfLines={1}>
+          {person.note}
+        </Text>
+        <View style={styles.railRow}>
+          {person.rails.map((rail) => (
+            <Text key={`${person.id}-${rail}`} style={styles.railPill}>
+              {rail}
+            </Text>
+          ))}
+        </View>
+      </View>
+      <View style={styles.personMeta}>
+        <Text style={styles.lastUsed} numberOfLines={2}>
+          {person.lastUsed}
+        </Text>
+        <Feather name="chevron-right" size={18} color={Colors.light.textTertiary} />
+      </View>
+    </Pressable>
+  );
+}
+
+function PeopleSkeleton() {
+  return (
+    <>
+      {[0, 1, 2].map((item) => (
+        <View key={item} style={styles.personRow}>
+          <SkeletonBlock style={styles.rowAvatarSkeleton} />
+          <View style={styles.personCopy}>
+            <SkeletonBlock style={styles.rowTitleSkeleton} />
+            <SkeletonBlock style={styles.rowSubtitleSkeleton} />
+          </View>
+        </View>
+      ))}
+    </>
+  );
+}
+
+function EmptyPeopleState({ onAdd }: { onAdd: () => void }) {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyIcon}>
+        <Feather name="users" size={24} color={Colors.light.textSecondary} />
+      </View>
+      <Text style={styles.emptyTitle}>No saved recipients yet</Text>
+      <Text style={styles.emptyText}>
+        Add someone once, then sending through bank transfer, Paayee handle, or wallet becomes faster.
+      </Text>
+      <Pressable accessibilityRole="button" onPress={onAdd} style={styles.emptyButton}>
+        <Text style={styles.emptyButtonText}>Add recipient</Text>
+      </Pressable>
+    </View>
   );
 }

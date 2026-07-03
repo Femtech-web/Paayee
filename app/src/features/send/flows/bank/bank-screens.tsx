@@ -5,10 +5,13 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
+import { useAppData } from '@/features/app-data';
 import {
   bankOptions,
-  sendRecipients,
+  fallbackBankRecipient,
+  toBankSendRecipient,
   type BankOption,
+  type SendRecipient,
 } from '../../send-data';
 import { sendStyles as styles } from '../../send-screen.styles';
 import {
@@ -21,26 +24,36 @@ import {
   FieldLabel,
   FilterChip,
   FooterButton,
+  EmptyRecipients,
   RecipientRow,
 } from '../shared/send-ui';
-import { createBankAmountHref, defaultRecipient } from '../shared/send-utils';
+import { createBankAmountHref } from '../shared/send-utils';
 
 export function SendBankScreen() {
   const router = useRouter();
+  const { data } = useAppData();
   const [query, setQuery] = useState('');
+  const recipients = useMemo(
+    () =>
+      data?.recipients
+        .map(toBankSendRecipient)
+        .filter((recipient): recipient is SendRecipient => recipient !== null) ??
+      [],
+    [data?.recipients],
+  );
   const filteredRecipients = useMemo(() => {
     const normalized = query.trim().toLowerCase();
 
     if (!normalized) {
-      return sendRecipients;
+      return recipients;
     }
 
-    return sendRecipients.filter((recipient) =>
+    return recipients.filter((recipient) =>
       `${recipient.name} ${recipient.bankName} ${recipient.accountNumber}`
         .toLowerCase()
         .includes(normalized),
     );
-  }, [query]);
+  }, [query, recipients]);
 
   return (
     <ScreenShell>
@@ -83,13 +96,17 @@ export function SendBankScreen() {
 
       <FadeInView delay={230} style={styles.recipientList}>
         <Text style={styles.sectionTitle}>Recent recipients</Text>
-        {filteredRecipients.map((recipient) => (
-          <RecipientRow
-            key={recipient.id}
-            recipient={recipient}
-            onPress={() => router.push(createBankAmountHref(recipient))}
-          />
-        ))}
+        {filteredRecipients.length > 0 ? (
+          filteredRecipients.map((recipient) => (
+            <RecipientRow
+              key={recipient.id}
+              recipient={recipient}
+              onPress={() => router.push(createBankAmountHref(recipient))}
+            />
+          ))
+        ) : (
+          <EmptyRecipients />
+        )}
       </FadeInView>
     </ScreenShell>
   );
@@ -102,7 +119,7 @@ export function NewBankRecipientScreen() {
   const [bankQuery, setBankQuery] = useState('');
   const [bankPickerOpen, setBankPickerOpen] = useState(false);
   const isResolved = Boolean(selectedBank && accountNumber.length === 10);
-  const accountName = isResolved ? 'AKOLADE OLUWAFEMI ADEYEMI' : '';
+  const accountName = isResolved ? 'Bank recipient' : '';
   const filteredBanks = bankOptions.filter((bank) =>
     bank.name.toLowerCase().includes(bankQuery.trim().toLowerCase()),
   );
@@ -183,10 +200,9 @@ export function NewBankRecipientScreen() {
 
 export function SendAmountScreen() {
   return (
-    <SharedAmountScreen
+      <SharedAmountScreen
       defaultSendAsset={defaultNgnAsset}
-      defaultTenderedAmount="5035"
-      fallbackRecipient={defaultRecipient}
+      fallbackRecipient={fallbackBankRecipient}
       reviewPath="/send/bank/review"
     />
   );

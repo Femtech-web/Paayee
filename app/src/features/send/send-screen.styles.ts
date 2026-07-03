@@ -18,7 +18,7 @@ export const sendStyles = StyleSheet.create({
   shell: {
     width: '100%',
     maxWidth: MaxContentWidth,
-    gap: 24,
+    gap: 22,
   },
   topBar: {
     minHeight: 76,
@@ -52,19 +52,19 @@ export const sendStyles = StyleSheet.create({
     elevation: 4,
   },
   hero: {
-    gap: 10,
+    gap: 8,
   },
   title: {
     color: Colors.light.black,
     fontFamily: Fonts.bold,
-    fontSize: 32,
-    lineHeight: 39,
+    fontSize: 26,
+    lineHeight: 32,
   },
   subtitle: {
     color: '#687184',
     fontFamily: Fonts.sans,
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 14,
+    lineHeight: 21,
   },
   methodList: {
     gap: 20,
@@ -484,6 +484,12 @@ export const sendStyles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#DEE3EC',
+  },
+  errorText: {
+    color: Colors.light.error,
+    fontFamily: Fonts.medium,
+    fontSize: 13,
+    lineHeight: 19,
   },
   successBody: {
     flex: 1,

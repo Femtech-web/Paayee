@@ -1,3 +1,5 @@
+import type { AppBalance, AppRecipient } from '@/features/app-data';
+
 export type SendRecipient = {
   id: string;
   name: string;
@@ -5,6 +7,7 @@ export type SendRecipient = {
   accountNumber: string;
   handle?: string;
   initials: string;
+  walletAddress?: string;
 };
 
 export type BankOption = {
@@ -23,59 +26,16 @@ export type SendAssetOption = {
 };
 
 export type StablecoinNetworkOption = {
+  chainId: number;
   id: string;
   name: string;
   shortName: string;
 };
 
 export const sendRecipients: SendRecipient[] = [
-  {
-    id: 'akolade-first-bank',
-    name: 'Akolade Oluwafemi Adeyemi',
-    bankName: 'First Bank PLC',
-    accountNumber: '3183073678',
-    initials: 'AO',
-  },
-  {
-    id: 'titilayo-monipoint',
-    name: 'Titilayo Rebecca Bamigbade',
-    bankName: 'Moniepoint Microfinance Bank',
-    accountNumber: '8118981776',
-    initials: 'TR',
-  },
-  {
-    id: 'cowrywise-gtb',
-    name: 'Cowrywise Oluwafemi Adeyemi Akolade',
-    bankName: 'Guaranty Trust Bank',
-    accountNumber: '9002053066',
-    initials: 'CO',
-  },
-  {
-    id: 'angela-opay',
-    name: 'Angela Tantvi Peter',
-    bankName: 'Opay',
-    accountNumber: '7068955766',
-    initials: 'AT',
-  },
 ];
 
 export const paayeeHandleRecipients: SendRecipient[] = [
-  {
-    id: 'timileyin-christiana',
-    name: 'Timileyin Fakayode',
-    bankName: 'Paayee handle',
-    accountNumber: '@christiana',
-    handle: 'christiana',
-    initials: 'TF',
-  },
-  {
-    id: 'ada-paayee',
-    name: 'Ada Lin',
-    bankName: 'Paayee handle',
-    accountNumber: '@ada',
-    handle: 'ada',
-    initials: 'AL',
-  },
 ];
 
 export const bankOptions: BankOption[] = [
@@ -93,6 +53,7 @@ export const bankOptions: BankOption[] = [
 
 export const stablecoinNetworks: StablecoinNetworkOption[] = [
   {
+    chainId: 11155111,
     id: 'ethereum-sepolia',
     name: 'Ethereum Sepolia',
     shortName: 'Sepolia',
@@ -103,24 +64,103 @@ export const transferPurposes = ['General', 'Family', 'Bills', 'Savings', 'Busin
 
 export const sendAssetOptions: SendAssetOption[] = [
   {
-    balance: '181,329.75',
+    balance: '0.00',
     code: 'NGN',
     group: 'Local money',
     name: 'Nigerian Naira',
     symbol: '₦',
   },
   {
-    balance: '4,280.40',
+    balance: '0.00',
     code: 'USDC',
     group: 'Stablecoins',
     name: 'USDC',
     symbol: '$',
   },
   {
-    balance: '1,840.00',
+    balance: '0.00',
     code: 'USDT',
     group: 'Stablecoins',
     name: 'USDT',
     symbol: '$',
   },
 ];
+
+export const fallbackBankRecipient: SendRecipient = {
+  accountNumber: '',
+  bankName: 'Bank account',
+  id: 'bank-recipient',
+  initials: 'PY',
+  name: 'Recipient',
+};
+
+export const fallbackHandleRecipient: SendRecipient = {
+  accountNumber: '@recipient',
+  bankName: 'Paayee handle',
+  handle: 'recipient',
+  id: 'handle-recipient',
+  initials: 'PY',
+  name: 'Recipient',
+};
+
+export function createSendAssetOptionsFromBalances(balances?: AppBalance[]): SendAssetOption[] {
+  if (!balances?.length) {
+    return sendAssetOptions;
+  }
+
+  return sendAssetOptions.map((asset) => {
+    const balance = balances.find((item) => item.code === asset.code);
+
+    if (!balance) {
+      return asset;
+    }
+
+    return {
+      ...asset,
+      balance: stripCurrencySymbol(balance.displayAmount),
+      name: balance.name,
+    };
+  });
+}
+
+export function findSendAssetOption(code?: string, assets: SendAssetOption[] = sendAssetOptions) {
+  return (
+    assets.find((asset) => asset.code.toLowerCase() === code?.toLowerCase()) ?? assets[0]
+  );
+}
+
+export function toBankSendRecipient(recipient: AppRecipient): SendRecipient | null {
+  if (!recipient.bankName || !recipient.accountNumber) {
+    return null;
+  }
+
+  return {
+    accountNumber: recipient.accountNumber,
+    bankName: recipient.bankName,
+    id: recipient.id,
+    initials: recipient.initials,
+    name: recipient.name,
+  };
+}
+
+export function toHandleSendRecipient(recipient: AppRecipient): SendRecipient | null {
+  if (!recipient.handle) {
+    return null;
+  }
+
+  const handle = recipient.handle.replace(/^@+/, '');
+
+  return {
+    accountNumber: `@${handle}`,
+    bankName: 'Paayee handle',
+    handle,
+    id: recipient.id,
+    initials: recipient.initials,
+    name: recipient.name,
+    walletAddress: recipient.walletAddress,
+  };
+}
+
+function stripCurrencySymbol(value: string) {
+  return value.replace(/^[^\d-]+/, '').trim() || '0.00';
+}
