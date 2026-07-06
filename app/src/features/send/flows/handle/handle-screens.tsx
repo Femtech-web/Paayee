@@ -273,9 +273,12 @@ function createInitials(name: string) {
 export function PaayeeHandleAmountScreen() {
   return (
     <SharedAmountScreen
+      arrivalText="Arrives privately to their Paayee wallet"
       defaultSendAsset={defaultStableAsset}
       fallbackRecipient={defaultHandleRecipient}
+      lockReceiveAsset
       reviewPath="/send/handle/review"
+      title={(asset, recipient) => `Send ${asset.code} to ${recipient.firstName}`}
     />
   );
 }

@@ -112,9 +112,9 @@ export function AddNgnBankTransferScreen() {
                 const receiptParam = receiptId ? `&receiptId=${encodeURIComponent(receiptId)}` : '';
 
                 router.replace(
-                  `/operation-success?title=${encodeURIComponent('Money received')}&amount=${encodeURIComponent(
+                  `/operation-success?title=${encodeURIComponent('NGN deposit received')}&amount=${encodeURIComponent(
                     `₦${amount.toLocaleString('en-US')}`,
-                  )}&kind=deposit&transactionId=${encodeURIComponent(depositId)}${receiptParam}` as Href,
+                  )}&kind=deposit&asset=NGN&transactionId=${encodeURIComponent(depositId)}${receiptParam}` as Href,
                 );
               }}
             />
@@ -159,7 +159,7 @@ function FundingInstructionsCard({
       <View style={styles.fundingIntro}>
         <Text style={styles.fundingTitle}>Transfer to your Paayee NGN account</Text>
         <Text style={styles.fundingText}>
-          Use these details from your bank app. Your balance updates after payment confirmation.
+          Use these details from your bank app. Klyde verifies the payment, then Paayee credits your private balance.
         </Text>
       </View>
 
@@ -224,7 +224,7 @@ function FundingSimulatorCard({
     <FadeInView delay={170} style={styles.simulatorCard}>
       <View style={styles.simulatorCopy}>
         <Text style={styles.simulatorTitle}>Simulate transfer received</Text>
-        <Text style={styles.simulatorText}>Sandbox only. This confirms the funding flow without a real bank transfer.</Text>
+        <Text style={styles.simulatorText}>Sandbox only. This verifies NGN funding and credits your NGN balance.</Text>
       </View>
       <View style={styles.simulatorInputRow}>
         <Text style={styles.simulatorCurrency}>₦</Text>

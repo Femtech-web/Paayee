@@ -1,3 +1,5 @@
+import '@/features/confidential/zama-runtime-polyfills';
+
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +10,7 @@ import { AnimatedSplashScreen } from '@/components/brand/animated-splash-screen'
 import { AppTabBar } from '@/components/navigation/app-tab-bar';
 import { Colors } from '@/constants/theme';
 import { SessionGuard } from '@/features/auth';
+import { installPaayeeKlydeSmartAccountTransport } from '@/features/confidential/klyde-smart-account-transport';
 
 SplashScreen.preventAutoHideAsync().catch(() => null);
 
@@ -15,6 +18,7 @@ export default function TabLayout() {
   const [splashFinished, setSplashFinished] = useState(false);
 
   useEffect(() => {
+    installPaayeeKlydeSmartAccountTransport();
     SplashScreen.hideAsync().catch(() => null);
   }, []);
 

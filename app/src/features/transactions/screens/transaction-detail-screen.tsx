@@ -8,9 +8,15 @@ import { SkeletonBlock } from '@/components/loading/skeleton';
 import { PressableScale } from '@/components/motion/pressable-scale';
 import { Colors } from '@/constants/theme';
 import {
+  getPaayeePrivateOperationEnvelope,
+  type PaayeePrivateOperationEnvelope,
+} from '@/features/confidential/confidential-money';
+import {
   getKlydeConversion,
   getKlydeReceipt,
+  listKlydeConfidentialOperations,
   listKlydeTransactions,
+  type KlydeConfidentialOperation,
   type KlydeConversion,
   type KlydeReceipt,
   type KlydeTimelineItem,
@@ -29,20 +35,28 @@ type DetailRecord =
     }
   | {
       kind: 'receipt';
+      privateCreditOperation?: KlydeConfidentialOperation;
       transaction?: KlydeTransaction;
       value: KlydeReceipt;
+    }
+  | {
+      kind: 'private';
+      operationId: string;
+      value: PaayeePrivateOperationEnvelope;
     };
 
 export function TransactionDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     kind?: string;
+    privateEnvelopeId?: string;
     receiptId?: string;
     returnTo?: string;
     transactionId?: string;
   }>();
   const transactionId = readParam(params.transactionId);
   const receiptId = readParam(params.receiptId);
+  const privateEnvelopeId = readParam(params.privateEnvelopeId);
   const kind = readParam(params.kind);
   const returnTo = readParam(params.returnTo);
   const [record, setRecord] = useState<DetailRecord>();
@@ -66,9 +80,21 @@ export function TransactionDetailScreen() {
         return;
       }
 
+      if (kind === 'private-send' || kind === 'private-conversion') {
+        const envelope = await getPaayeePrivateOperationEnvelope(privateEnvelopeId);
+        if (envelope) {
+          setRecord({ kind: 'private', operationId: transactionId, value: envelope });
+          return;
+        }
+
+        setErrorMessage('Private receipt payload is unavailable on this device.');
+        return;
+      }
+
       if (receiptId) {
         const receipt = await getKlydeReceipt({ receiptId });
-        setRecord({ kind: 'receipt', value: receipt });
+        const privateCreditOperation = await resolvePrivateCreditOperation(receipt);
+        setRecord({ kind: 'receipt', privateCreditOperation, value: receipt });
         return;
       }
 
@@ -78,7 +104,8 @@ export function TransactionDetailScreen() {
       );
 
       if (transaction) {
-        setRecord({ kind: 'receipt', transaction, value: transaction.receipt });
+        const privateCreditOperation = await resolvePrivateCreditOperation(transaction.receipt);
+        setRecord({ kind: 'receipt', privateCreditOperation, transaction, value: transaction.receipt });
         return;
       }
 
@@ -93,7 +120,7 @@ export function TransactionDetailScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [kind, receiptId, transactionId]);
+  }, [kind, privateEnvelopeId, receiptId, transactionId]);
 
   useEffect(() => {
     void Promise.resolve().then(loadTransaction);
@@ -153,7 +180,7 @@ export function TransactionDetailScreen() {
       <View style={styles.heroIcon}>
                 <Feather name={display.icon} size={32} color="#2D3441" />
                 <View style={styles.assetDot}>
-                  <Text style={styles.assetDotText}>{display.assetCode.slice(0, 1)}</Text>
+                  <Text style={styles.assetDotText}>{getAssetBadgeText(display.assetCode)}</Text>
                 </View>
               </View>
               <Text style={styles.heroAmount}>{display.amount}</Text>
@@ -243,7 +270,12 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function TimelineRow({ isLast, item }: { isLast: boolean; item: KlydeTimelineItem }) {
-  const tone = item.status === 'failed' ? 'error' : item.status === 'current' ? 'pending' : 'success';
+  const tone =
+    item.status === 'failed'
+      ? 'error'
+      : item.status === 'completed'
+        ? 'success'
+        : 'pending';
 
   return (
     <View style={styles.timelineRow}>
@@ -255,7 +287,7 @@ function TimelineRow({ isLast, item }: { isLast: boolean; item: KlydeTimelineIte
             tone === 'pending' && styles.timelineMarkerPending,
           ]}>
           <Feather
-            name={item.status === 'failed' ? 'x' : item.status === 'current' ? 'clock' : 'check'}
+            name={item.status === 'failed' ? 'x' : tone === 'pending' ? 'clock' : 'check'}
             size={15}
             color={Colors.light.white}
           />
@@ -264,7 +296,7 @@ function TimelineRow({ isLast, item }: { isLast: boolean; item: KlydeTimelineIte
       </View>
       <View style={styles.timelineCopy}>
         <Text style={styles.timelineTitle}>{item.title}</Text>
-        {item.description ? <Text style={styles.timelineText}>{item.description}</Text> : null}
+        {item.description ? <Text style={styles.timelineText}>{formatTimelineDescription(item)}</Text> : null}
         {item.timestamp ? <Text style={styles.timelineDate}>{formatLongDate(item.timestamp)}</Text> : null}
       </View>
     </View>
@@ -305,16 +337,36 @@ function createDisplay(record: DetailRecord): {
 } {
   if (record.kind === 'conversion') {
     const conversion = record.value;
+    const isPrivateStablecoinConversion =
+      isStablecoinCurrency(conversion.sourceAmount.currency) ||
+      isStablecoinCurrency(conversion.targetAmount.currency);
+
+    if (isPrivateStablecoinConversion) {
+      return {
+        amount: 'Private amount',
+        assetCode: conversion.targetAmount.currency,
+        canRepeat: false,
+        date: formatLongDate(conversion.createdAt),
+        icon: 'repeat' as const,
+        rows: [
+          { label: 'Private operation', value: conversion.id },
+          { label: 'Status', value: formatStatus(conversion.status) },
+        ],
+        status: conversion.status,
+        subtitle: 'Decrypt the private receipt payload to view amount details',
+        timeline: ensureTimeline(conversion.timeline, conversion.status, 'private conversion'),
+      };
+    }
 
     return {
-      amount: formatMoneyAmount(conversion.targetAmount),
+      amount: formatMoneyAmountWithAsset(conversion.targetAmount),
       assetCode: conversion.targetAmount.currency,
       canRepeat: false,
       date: formatLongDate(conversion.createdAt),
       icon: 'repeat' as const,
       rows: [
-        { label: 'You received', value: formatMoneyAmount(conversion.targetAmount) },
-        { label: 'You converted', value: formatMoneyAmount(conversion.sourceAmount) },
+        { label: 'You received', value: formatMoneyAmountWithAsset(conversion.targetAmount) },
+        { label: 'You converted', value: formatMoneyAmountWithAsset(conversion.sourceAmount) },
         ...(conversion.rateReference ? [{ label: 'Rate reference', value: conversion.rateReference }] : []),
       ],
       status: conversion.status,
@@ -323,26 +375,81 @@ function createDisplay(record: DetailRecord): {
     };
   }
 
+  if (record.kind === 'private') {
+    const envelope = record.value;
+    const isConversion = envelope.operationType === 'conversion';
+    const rows = isConversion
+      ? [
+          { label: 'Private operation', value: record.operationId },
+          ...(envelope.sourceAmountDisplay ? [{ label: 'You converted', value: envelope.sourceAmountDisplay }] : []),
+          ...(envelope.targetAmountDisplay ? [{ label: 'You receive', value: envelope.targetAmountDisplay }] : []),
+        ]
+      : [
+          { label: 'Private operation', value: record.operationId },
+          {
+            label: 'Recipient',
+            value: envelope.recipientHandle ? `@${envelope.recipientHandle}` : envelope.recipientName ?? 'Private recipient',
+          },
+          ...(envelope.recipientWalletAddress
+            ? [{ label: 'Destination', value: shortenAddress(envelope.recipientWalletAddress) }]
+            : []),
+          ...(envelope.purpose ? [{ label: 'Purpose', value: envelope.purpose }] : []),
+        ];
+
+    return {
+      amount: envelope.amountDisplay ?? envelope.targetAmountDisplay ?? 'Private amount',
+      assetCode: envelope.assetCode,
+      canRepeat: false,
+      date: formatLongDate(envelope.createdAt),
+      icon: isConversion ? 'repeat' as const : 'arrow-up-right' as const,
+      rows,
+      status: envelope.status,
+      subtitle: isConversion
+        ? `Private conversion to ${envelope.targetAssetCode ?? envelope.assetCode}`
+        : 'Private Paayee confidential-token operation',
+      timeline: ensureTimeline(undefined, envelope.status, isConversion ? 'private conversion' : 'private transfer'),
+    };
+  }
+
   const receipt = record.value;
   const isIncoming = receipt.railType === 'deposit';
+  const assetCode = resolveReceiptAssetCode(receipt);
+  const isStablecoinDeposit = isIncoming && isStablecoinCurrency(assetCode);
+  const privateCreditSymbol = isStablecoinDeposit ? `c${assetCode}` : undefined;
+  const privateCredit = record.privateCreditOperation
+    ? formatPrivateCreditStatus(record.privateCreditOperation)
+    : privateCreditSymbol
+      ? `Awaiting ${privateCreditSymbol} auto-shield`
+      : undefined;
+  const amountDisplay = formatMoneyAmountWithAsset(receipt.amount, { assetCode });
+  const amountLabel = isStablecoinDeposit ? 'Public amount received' : isIncoming ? 'You received' : 'You sent';
+  const settlementDisplay = receipt.settlementAmount
+    ? formatMoneyAmountWithAsset(receipt.settlementAmount, {
+        assetCode: receipt.settlementAsset?.symbol ?? receipt.settlementAmount.currency,
+      })
+    : undefined;
   const icon = isIncoming ? 'arrow-down-left' : 'arrow-up-right';
 
   return {
-    amount: formatMoneyAmount(receipt.amount),
-    assetCode: receipt.amount.currency,
+    amount: amountDisplay,
+    assetCode,
     canRepeat: !isIncoming,
     date: formatLongDate(receipt.createdAt),
     icon,
     rows: [
-      { label: isIncoming ? 'You received' : 'You sent', value: formatMoneyAmount(receipt.amount) },
-      { label: 'Payment channel', value: titleCase(receipt.railType.replace(/_/g, ' ')) },
-      ...(receipt.settlementAmount
-        ? [{ label: 'Settlement amount', value: formatMoneyAmount(receipt.settlementAmount) }]
-        : []),
+      { label: 'Asset', value: assetCode },
+      { label: amountLabel, value: amountDisplay },
+      { label: 'Payment channel', value: isStablecoinDeposit ? 'Public deposit' : titleCase(receipt.railType.replace(/_/g, ' ')) },
+      ...(settlementDisplay ? [{ label: 'Settlement amount', value: settlementDisplay }] : []),
+      ...(privateCredit ? [{ label: 'Private credit', value: privateCredit }] : []),
       { label: 'Reference code', value: receipt.reference },
     ],
     status: receipt.status,
-    subtitle: isIncoming ? 'Received into Paayee' : 'Sent from Paayee',
+    subtitle: isStablecoinDeposit
+      ? `Public ${assetCode} received into Paayee`
+      : isIncoming
+        ? `${assetCode} received into Paayee`
+        : `${assetCode} sent from Paayee`,
     timeline: ensureTimeline(receipt.timeline, receipt.status, receipt.railType),
   };
 }
@@ -356,28 +463,61 @@ function ensureTimeline(
     return timeline;
   }
 
-  const terminalStatus = isTerminalStatus(status) ? 'completed' : 'current';
-
-  return [
+  const normalizedStatus = status.toLowerCase();
+  const isFailure = ['failed', 'expired', 'refunded', 'cancelled'].includes(normalizedStatus);
+  const isSuccess = ['settled', 'succeeded', 'completed'].includes(normalizedStatus);
+  const isConversion = kind.includes('conversion');
+  const processingTitle = isConversion ? 'Processing conversion' : 'Processing payment';
+  const processingDescription =
+    isConversion
+      ? 'We are confirming the treasury settlement'
+      : 'We are confirming this payment';
+  const timelineItems: KlydeTimelineItem[] = [
     {
       step: `${kind}_initiated`,
-      title: kind === 'conversion' ? 'Conversion initiated' : 'Transaction initiated',
+      title: isConversion ? 'Conversion initiated' : 'Transaction initiated',
       status: 'completed',
     },
-    {
-      step: `${kind}_processing`,
-      title: kind === 'conversion' ? 'Processing conversion' : 'Processing payment',
-      status: terminalStatus,
-    },
-    {
-      step: `${kind}_complete`,
-      title: kind === 'conversion' ? 'Conversion complete' : 'Payment complete',
-      status: isTerminalStatus(status) ? 'completed' : 'pending',
-    },
   ];
+
+  if (!isFailure && !isSuccess) {
+    timelineItems.push({
+      step: `${kind}_processing`,
+      title: processingTitle,
+      description: processingDescription,
+      status: 'current',
+    });
+    return timelineItems;
+  }
+
+  timelineItems.push({
+    step: `${kind}_processing`,
+    title: processingTitle,
+    status: 'completed',
+  });
+
+  timelineItems.push(
+    {
+      step: isFailure ? `${kind}_failed` : `${kind}_complete`,
+      title: isFailure
+        ? isConversion
+          ? 'Conversion failed'
+          : 'Payment failed'
+        : isConversion
+          ? 'Conversion complete'
+          : 'Payment complete',
+      status: isFailure ? 'failed' : 'completed',
+    },
+  );
+
+  return timelineItems;
 }
 
 function isTerminalRecord(record: DetailRecord): boolean {
+  if (record.kind === 'receipt' && record.privateCreditOperation) {
+    return isTerminalPrivateCreditStatus(record.privateCreditOperation.status);
+  }
+
   const status = record.kind === 'conversion' ? record.value.status : record.value.status;
 
   return isTerminalStatus(status);
@@ -407,6 +547,61 @@ function formatStatus(status: string): string {
   return titleCase(status.replace(/_/g, ' '));
 }
 
+function formatTimelineDescription(item: KlydeTimelineItem): string {
+  if (item.status !== 'failed') {
+    return item.description ?? '';
+  }
+
+  return 'We could not complete this conversion right now. Your funds have been returned.';
+}
+
+async function resolvePrivateCreditOperation(receipt: KlydeReceipt): Promise<KlydeConfidentialOperation | undefined> {
+  const assetCode = resolveReceiptAssetCode(receipt);
+  if (receipt.railType !== 'deposit' || !isStablecoinCurrency(assetCode)) {
+    return undefined;
+  }
+
+  try {
+    const operations = await listKlydeConfidentialOperations({ page: 1, pageSize: 50 });
+
+    return operations.find((operation) => {
+      if (operation.kind !== 'confidential_deposit') {
+        return false;
+      }
+
+      const metadata = operation.metadata ?? {};
+      const railId = typeof metadata.railId === 'string' ? metadata.railId : undefined;
+      const sourceCurrency =
+        typeof metadata.sourceCurrency === 'string' ? metadata.sourceCurrency.toUpperCase() : undefined;
+      const targetUnderlyingSymbol =
+        typeof metadata.targetUnderlyingSymbol === 'string' ? metadata.targetUnderlyingSymbol.toUpperCase() : undefined;
+
+      return railId === receipt.railId || sourceCurrency === assetCode || targetUnderlyingSymbol === assetCode;
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function formatPrivateCreditStatus(operation: KlydeConfidentialOperation): string {
+  const symbol = operation.symbol.toUpperCase();
+
+  switch (operation.status) {
+    case 'succeeded':
+      return `${symbol} credited privately`;
+    case 'submitted':
+      return `${symbol} auto-shield confirming`;
+    case 'prepared':
+      return `${symbol} auto-shield pending`;
+    case 'failed':
+      return `${symbol} auto-shield needs attention`;
+  }
+}
+
+function isTerminalPrivateCreditStatus(status: KlydeConfidentialOperation['status']): boolean {
+  return status === 'succeeded' || status === 'failed';
+}
+
 function formatMoneyAmount(amount: MoneyAmount): string {
   const numericAmount = parseMoneyAmount(amount);
   const symbol = getCurrencySymbol(amount.currency);
@@ -419,6 +614,39 @@ function formatMoneyAmount(amount: MoneyAmount): string {
   }
 
   return `${symbol}${amount.display}`;
+}
+
+function formatMoneyAmountWithAsset(amount: MoneyAmount, options: { assetCode?: string } = {}): string {
+  const formatted = formatMoneyAmount(amount);
+  const assetCode = (options.assetCode ?? amount.currency).toUpperCase();
+
+  if (isStablecoinCurrency(assetCode)) {
+    return `${formatted} ${assetCode}`;
+  }
+
+  return formatted;
+}
+
+function resolveReceiptAssetCode(receipt: KlydeReceipt): string {
+  return (receipt.settlementAsset?.symbol ?? receipt.amount.currency).toUpperCase();
+}
+
+function getAssetBadgeText(assetCode: string): string {
+  const normalized = assetCode.toUpperCase();
+
+  if (normalized === 'NGN') {
+    return '₦';
+  }
+
+  if (normalized === 'USDC') {
+    return 'C';
+  }
+
+  if (normalized === 'USDT') {
+    return 'T';
+  }
+
+  return normalized.slice(0, 1);
 }
 
 function parseMoneyAmount(amount: MoneyAmount): number {
@@ -439,6 +667,12 @@ function getCurrencySymbol(currency: string): string {
   }
 
   return `${currency.toUpperCase()} `;
+}
+
+function isStablecoinCurrency(currency: string): boolean {
+  const normalized = currency.toUpperCase();
+
+  return normalized === 'USDC' || normalized === 'USDT';
 }
 
 function formatLongDate(value?: string): string {
@@ -463,6 +697,14 @@ function formatLongDate(value?: string): string {
   }).format(date);
 
   return `${day} | ${time}`;
+}
+
+function shortenAddress(address: string): string {
+  if (address.length <= 14) {
+    return address;
+  }
+
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
 function readParam(value?: string | string[]) {

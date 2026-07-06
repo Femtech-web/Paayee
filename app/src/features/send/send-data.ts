@@ -7,19 +7,24 @@ export type SendRecipient = {
   accountNumber: string;
   handle?: string;
   initials: string;
+  bankCode?: string;
   walletAddress?: string;
 };
 
 export type BankOption = {
+  code?: string;
   id: string;
   name: string;
+  provider?: string;
 };
 
 export type SendAssetCode = 'NGN' | 'USDC' | 'USDT';
 
 export type SendAssetOption = {
   balance: string;
+  balanceUnavailable?: boolean;
   code: SendAssetCode;
+  confidentialityStatus?: AppBalance['confidentialityStatus'];
   group: 'Local money' | 'Stablecoins';
   name: string;
   symbol: string;
@@ -39,16 +44,16 @@ export const paayeeHandleRecipients: SendRecipient[] = [
 ];
 
 export const bankOptions: BankOption[] = [
-  { id: 'access', name: 'Access Bank' },
-  { id: 'first-bank', name: 'First Bank PLC' },
-  { id: 'gtb', name: 'Guaranty Trust Bank' },
-  { id: 'kuda', name: 'Kuda Microfinance Bank' },
-  { id: 'moniepoint', name: 'Moniepoint Microfinance Bank' },
-  { id: 'opay', name: 'Opay' },
-  { id: 'palmpay', name: 'PalmPay' },
-  { id: 'providus', name: 'Providus Bank' },
-  { id: 'uba', name: 'United Bank for Africa' },
-  { id: 'zenith', name: 'Zenith Bank' },
+  { code: '044', id: 'access', name: 'Access Bank' },
+  { code: '011', id: 'first-bank', name: 'First Bank PLC' },
+  { code: '058', id: 'gtb', name: 'Guaranty Trust Bank' },
+  { code: '50211', id: 'kuda', name: 'Kuda Microfinance Bank' },
+  { code: '50515', id: 'moniepoint', name: 'Moniepoint Microfinance Bank' },
+  { code: '999992', id: 'opay', name: 'Opay' },
+  { code: '999991', id: 'palmpay', name: 'PalmPay' },
+  { code: '101', id: 'providus', name: 'Providus Bank' },
+  { code: '033', id: 'uba', name: 'United Bank for Africa' },
+  { code: '057', id: 'zenith', name: 'Zenith Bank' },
 ];
 
 export const stablecoinNetworks: StablecoinNetworkOption[] = [
@@ -117,7 +122,14 @@ export function createSendAssetOptionsFromBalances(balances?: AppBalance[]): Sen
 
     return {
       ...asset,
-      balance: stripCurrencySymbol(balance.displayAmount),
+      balance: isMaskedBalance(balance.displayAmount)
+        ? '••••'
+        : stripCurrencySymbol(balance.displayAmount),
+      balanceUnavailable:
+        balance.confidentialityStatus === 'handle_available' ||
+        balance.confidentialityStatus === 'unavailable' ||
+        isMaskedBalance(balance.displayAmount),
+      confidentialityStatus: balance.confidentialityStatus,
       name: balance.name,
     };
   });
@@ -136,6 +148,7 @@ export function toBankSendRecipient(recipient: AppRecipient): SendRecipient | nu
 
   return {
     accountNumber: recipient.accountNumber,
+    bankCode: recipient.bankCode,
     bankName: recipient.bankName,
     id: recipient.id,
     initials: recipient.initials,
@@ -163,4 +176,8 @@ export function toHandleSendRecipient(recipient: AppRecipient): SendRecipient | 
 
 function stripCurrencySymbol(value: string) {
   return value.replace(/^[^\d-]+/, '').trim() || '0.00';
+}
+
+function isMaskedBalance(value: string): boolean {
+  return value.includes('••••');
 }

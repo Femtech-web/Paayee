@@ -1,7 +1,7 @@
 import { Feather } from '@react-native-vector-icons/feather';
 import * as Clipboard from 'expo-clipboard';
-import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
 import { FeedbackToast } from '@/components/feedback-toast';
@@ -13,7 +13,7 @@ import { useAppData } from '@/features/app-data';
 import {
   getKlydeConfig,
   getKlydeFundingInstructions,
-  listKlydeTransactions,
+  resolveKlydeConfidentialAsset,
   simulateKlydeFundingReceived,
   type KlydeFundingInstructions,
 } from '@/integrations/klyde';
@@ -35,7 +35,6 @@ import { splitAddress } from '../components/add-money-ui';
 const MAX_SIMULATED_STABLECOIN = 100_000;
 
 export function AddStablecoinTransferScreen() {
-  const router = useRouter();
   const params = useLocalSearchParams<{ asset?: string }>();
   const { data } = useAppData();
   const assets = useMemo(
@@ -50,11 +49,10 @@ export function AddStablecoinTransferScreen() {
   const network = addMoneyNetworks[0];
   const [depositAddress, setDepositAddress] = useState(addMoneyDepositAddress);
   const [fundingInstructions, setFundingInstructions] = useState<KlydeFundingInstructions>();
+  const [confidentialTokenAddress, setConfidentialTokenAddress] = useState<string>();
   const [addressError, setAddressError] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const openedAtRef = useRef(Date.now());
-  const routedDepositRef = useRef(false);
   const showSandboxSimulator = getKlydeConfig().environment !== 'production';
   const walletFunding = fundingInstructions?.rail === 'wallet' ? fundingInstructions : undefined;
   const networkName = walletFunding?.networkName ?? network.name;
@@ -119,6 +117,21 @@ export function AddStablecoinTransferScreen() {
         }
       });
 
+    resolveKlydeConfidentialAsset({
+      chainId: fundingRequest.chainId,
+      underlyingSymbol: stableAssetCode,
+    })
+      .then((asset) => {
+        if (mounted) {
+          setConfidentialTokenAddress(asset.tokenAddress);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setConfidentialTokenAddress(undefined);
+        }
+      });
+
     return () => {
       mounted = false;
     };
@@ -136,61 +149,6 @@ export function AddStablecoinTransferScreen() {
 
     return () => clearTimeout(timeout);
   }, [errorMessage, successMessage]);
-
-  useEffect(() => {
-    if (!runtimeConfig.realIntegrationsEnabled || addressError || !walletFunding) {
-      return;
-    }
-
-    let mounted = true;
-
-    async function pollForStablecoinDeposit() {
-      if (routedDepositRef.current) {
-        return;
-      }
-
-      try {
-        const response = await listKlydeTransactions({ page: 1, pageSize: 20 });
-        const deposit = response.data.find((transaction) => {
-          const createdAt = new Date(transaction.createdAt).getTime();
-
-          return (
-            transaction.kind === 'deposit' &&
-            transaction.amount.currency === stableAssetCode &&
-            Number.isFinite(createdAt) &&
-            createdAt >= openedAtRef.current - 5000
-          );
-        });
-
-        if (!mounted || !deposit) {
-          return;
-        }
-
-        routedDepositRef.current = true;
-        const receiptParam = deposit.receiptId ? `&receiptId=${encodeURIComponent(deposit.receiptId)}` : '';
-
-        router.replace(
-          `/operation-success?title=${encodeURIComponent(`${stableAssetCode} received`)}&amount=${encodeURIComponent(
-            formatStablecoinOperationAmount(deposit.amount.display, stableAssetCode),
-          )}&asset=${encodeURIComponent(stableAssetCode)}&kind=deposit&transactionId=${encodeURIComponent(
-            deposit.id,
-          )}${receiptParam}` as Href,
-        );
-      } catch (error) {
-        if (__DEV__) {
-          console.warn(`Could not poll ${stableAssetCode} deposits`, error);
-        }
-      }
-    }
-
-    void pollForStablecoinDeposit();
-    const interval = setInterval(pollForStablecoinDeposit, 3500);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, [addressError, router, stableAssetCode, walletFunding]);
 
   const overlay = (
     <>
@@ -240,7 +198,7 @@ export function AddStablecoinTransferScreen() {
 
         <Text style={styles.noteText}>
           Only send {tokenSymbol} on the {networkName} network to this address.
-          Your deposit will appear in your {stableAssetCode} balance after confirmation.
+          Public transfers are shielded into your private Paayee balance after confirmation.
         </Text>
       </FadeInView>
 
@@ -276,7 +234,10 @@ export function AddStablecoinTransferScreen() {
         <StablecoinInfoBullet
           text={`Send only ${tokenSymbol} on ${networkShortName}. Other tokens or networks may not arrive automatically.`}
         />
-        <StablecoinInfoBullet text={`${tokenSymbol} deposits use ${tokenDecimals} decimals and are credited after confirmation.`} />
+        <StablecoinInfoBullet text={`${tokenSymbol} deposits use ${tokenDecimals} decimals and are credited after confidential shielding.`} />
+        {confidentialTokenAddress ? (
+          <StablecoinInfoBullet text={`Direct private receive uses Paayee ${stableAssetCode}: ${splitAddress(confidentialTokenAddress)}`} />
+        ) : null}
         {tokenAddress ? <StablecoinInfoBullet text={`Token contract: ${splitAddress(tokenAddress)}`} /> : null}
       </FadeInView>
     </AddMoneyShell>
@@ -313,19 +274,6 @@ function formatStablecoinFundingInstructionsError(error: unknown): string {
   }
 
   return message || 'Could not load your stablecoin funding address.';
-}
-
-function formatStablecoinOperationAmount(display: string, assetCode: 'USDC' | 'USDT'): string {
-  const numericAmount = Number(display);
-
-  if (!Number.isFinite(numericAmount)) {
-    return `${display} ${assetCode}`;
-  }
-
-  return `$${numericAmount.toLocaleString('en-US', {
-    maximumFractionDigits: 6,
-    minimumFractionDigits: numericAmount % 1 === 0 ? 0 : 2,
-  })}`;
 }
 
 function isKlydeSessionError(error: unknown): boolean {

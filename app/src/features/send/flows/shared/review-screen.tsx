@@ -10,7 +10,7 @@ import {
   type SendAssetCode,
 } from '../../send-data';
 import { sendStyles as styles } from '../../send-screen.styles';
-import { createLiveSend, type LiveSendMethod } from '../../send-live';
+import { createLiveSend, isPrivateSendResult, type LiveSendMethod } from '../../send-live';
 import { ScreenShell, TopBar } from './send-layout';
 import { FieldLabel, FooterButton, RecipientHeader, SummaryRow } from './send-ui';
 import { findAsset, formatMoney, readParam } from './send-utils';
@@ -46,7 +46,7 @@ export function ReviewSendScreen() {
     setErrorMessage('');
 
     try {
-      await createLiveSend({
+      const liveSend = await createLiveSend({
         amount,
         assetCode: asset.code,
         method,
@@ -55,6 +55,36 @@ export function ReviewSendScreen() {
         purpose,
         recipient,
       });
+
+      if (liveSend) {
+        if (isPrivateSendResult(liveSend)) {
+          router.replace(
+            `/operation-success?title=${encodeURIComponent('Private transfer prepared')}&asset=${encodeURIComponent(
+              asset.code,
+            )}&amount=${encodeURIComponent(formatMoney(amount, asset))}&kind=private-send&transactionId=${encodeURIComponent(
+              liveSend.operation.id,
+            )}&privateEnvelopeId=${encodeURIComponent(liveSend.envelope.id)}&status=${encodeURIComponent(
+              liveSend.operation.status,
+            )}` as const,
+          );
+          return;
+        }
+
+        const transactionId = liveSend.receiptId ?? liveSend.id;
+        const receiptQuery = liveSend.receiptId
+          ? `&receiptId=${encodeURIComponent(liveSend.receiptId)}`
+          : '';
+
+        router.replace(
+          `/operation-success?title=${encodeURIComponent('Transfer started')}&amount=${encodeURIComponent(
+            formatMoney(amount, asset),
+          )}&asset=${encodeURIComponent(asset.code)}&kind=send&transactionId=${encodeURIComponent(
+            transactionId,
+          )}${receiptQuery}` as const,
+        );
+        return;
+      }
+
       router.replace('/send/success');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not complete this transfer.');

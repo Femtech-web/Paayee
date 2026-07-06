@@ -1,23 +1,38 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { runtimeConfig } from '@/config/runtime';
 import {
+  getKlydeRates,
   getKlydeWalletSnapshot,
+  listKlydeConfidentialOperations,
+  listKlydeConversions,
   listKlydeRecentRecipients,
   listKlydeTransactions,
   type KlydeBalance,
+  type KlydeConversion,
+  type KlydeConfidentialOperation,
+  type KlydeRates,
   type KlydeRecentRecipient,
   type KlydeTransaction,
   type KlydeWallet,
   type KlydeWalletSnapshot,
   type MoneyAmount,
 } from '@/integrations/klyde/client';
+import { getKlydeConfig } from '@/integrations/klyde/env';
+import {
+  getPaayeeConfidentialBalanceDisplay,
+  listPaayeePrivateOperationEnvelopes,
+  isStablecoinAsset,
+  type PaayeePrivateOperationEnvelope,
+} from '@/features/confidential/confidential-money';
 import {
   getCurrentProfile,
   listCurrentBeneficiaries,
   type PaayeeBeneficiary,
   type PaayeeProfile,
 } from '@/integrations/supabase';
+import { getDisplayCurrencyPreference, type DisplayCurrency } from '@/features/preferences/display-currency-preference';
 
 export type AppProfile = {
   email: string;
@@ -35,6 +50,8 @@ export type AppProfile = {
 
 export type AppBalance = {
   code: 'NGN' | 'USDC' | 'USDT';
+  confidentialBalanceHandle?: string;
+  confidentialityStatus?: 'available' | 'handle_available' | 'unavailable';
   displayAmount: string;
   icon: 'ngn' | 'usdc' | 'usdt';
   label: string;
@@ -44,6 +61,7 @@ export type AppBalance = {
 
 export type AppRecipient = {
   accountNumber?: string;
+  bankCode?: string;
   bankName?: string;
   handle?: string;
   id: string;
@@ -58,11 +76,13 @@ export type AppRecipient = {
 
 export type AppTransaction = {
   amount: string;
+  createdAt: string;
   detail: string;
   icon?: 'arrow-down-left' | 'eye' | 'repeat' | 'shield' | 'trending-up';
   id: string;
   initials?: string;
-  kind: KlydeTransaction['kind'];
+  kind: KlydeTransaction['kind'] | 'conversion' | 'private-send' | 'private-conversion';
+  privateEnvelopeId?: string;
   receiptId?: string;
   secondaryAmount?: string;
   title: string;
@@ -72,6 +92,7 @@ export type AppTransaction = {
 
 export type AppData = {
   balances: AppBalance[];
+  displayCurrency: DisplayCurrency;
   profile: AppProfile;
   recipients: AppRecipient[];
   totalDisplay: string;
@@ -129,23 +150,34 @@ export function useAppData(): AppDataState {
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const hasLoadedInitialData = useRef(false);
+  const refreshInFlight = useRef<Promise<void> | undefined>(undefined);
 
   const refresh = useCallback(async (options: { silent?: boolean } = {}) => {
-    if (!options.silent) {
-      setLoading(true);
+    if (refreshInFlight.current) {
+      return refreshInFlight.current;
     }
-    setError(undefined);
 
-    try {
-      setData(await loadAppData());
-    } catch (fetchError) {
-      setData(createEmptyAppData());
-      setError(fetchError instanceof Error ? fetchError.message : 'Could not load account data.');
-    } finally {
+    const refreshPromise = Promise.resolve().then(async () => {
       if (!options.silent) {
-        setLoading(false);
+        setLoading(true);
       }
-    }
+      setError(undefined);
+
+      try {
+        setData(await loadAppData());
+      } catch (fetchError) {
+        setData(createEmptyAppData());
+        setError(fetchError instanceof Error ? fetchError.message : 'Could not load account data.');
+      } finally {
+        if (!options.silent) {
+          setLoading(false);
+        }
+        refreshInFlight.current = undefined;
+      }
+    });
+
+    refreshInFlight.current = refreshPromise;
+    return refreshPromise;
   }, []);
 
   useEffect(() => {
@@ -189,6 +221,20 @@ export function useAppData(): AppDataState {
     }, [refresh]),
   );
 
+  useEffect(() => {
+    if (!runtimeConfig.realIntegrationsEnabled) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (hasLoadedInitialData.current) {
+        void refresh({ silent: true });
+      }
+    }, 15_000);
+
+    return () => clearInterval(interval);
+  }, [refresh]);
+
   return useMemo(
     () => ({
       data,
@@ -201,15 +247,40 @@ export function useAppData(): AppDataState {
 }
 
 async function loadAppData(): Promise<AppData> {
-  const [profile, beneficiaries, klydeSnapshot, klydeTransactions, recentRecipients] = await Promise.all([
+  const displayCurrency = await getDisplayCurrencyPreference();
+  const [
+    profile,
+    beneficiaries,
+    klydeSnapshot,
+    klydeTransactions,
+    klydeConversions,
+    recentRecipients,
+    privateOperations,
+    confidentialOperations,
+    rates,
+  ] = await Promise.all([
     getCurrentProfile(),
     listCurrentBeneficiaries(),
-    getKlydeWalletSnapshot({ baseCurrency: 'NGN' }).catch(() => undefined),
+    getKlydeWalletSnapshot({ baseCurrency: displayCurrency }).catch(() => undefined),
     listKlydeTransactions({ page: 1, pageSize: 10 }).catch(() => undefined),
+    listKlydeConversions({ page: 1, pageSize: 10 }).catch(() => undefined),
     listKlydeRecentRecipients({ limit: 10 }).catch(() => []),
+    listPaayeePrivateOperationEnvelopes({ hydrate: false }).catch(() => []),
+    listKlydeConfidentialOperations({ page: 1, pageSize: 50 }).catch(() => []),
+    getKlydeRates({ baseCurrency: 'NGN', currencies: ['USD', 'USDC', 'USDT'] }).catch(() => undefined),
   ]);
-  const balances = normalizeBalances(klydeSnapshot?.balances);
-  const transactions = klydeTransactions?.data.map(normalizeTransaction) ?? [];
+  const balances = await applyConfidentialBalanceDisplays(
+    normalizeBalances(klydeSnapshot?.balances),
+    klydeSnapshot?.wallet,
+    confidentialOperations,
+  );
+  const transactions = [
+    ...(klydeTransactions?.data.map(normalizeTransaction) ?? []),
+    ...(klydeConversions?.data.map(normalizeConversion) ?? []),
+    ...privateOperations.map(normalizePrivateOperation),
+  ]
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 20);
   const recipients = [
     ...beneficiaries.map(normalizeBeneficiary),
     ...recentRecipients.map(normalizeRecentRecipient),
@@ -217,9 +288,10 @@ async function loadAppData(): Promise<AppData> {
 
   return {
     balances,
+    displayCurrency,
     profile: normalizeProfile(profile, klydeSnapshot?.wallet),
     recipients,
-    totalDisplay: createTotalDisplay(balances, klydeSnapshot?.valuation),
+    totalDisplay: createTotalDisplay(balances, displayCurrency, klydeSnapshot?.valuation, rates),
     transactions,
     wallet: klydeSnapshot?.wallet,
   };
@@ -228,6 +300,7 @@ async function loadAppData(): Promise<AppData> {
 function createEmptyAppData(): AppData {
   return {
     balances: emptyBalances,
+    displayCurrency: 'NGN',
     profile: emptyProfile,
     recipients: [],
     totalDisplay: '₦0.00',
@@ -282,15 +355,16 @@ function normalizeBeneficiary(beneficiary: PaayeeBeneficiary): AppRecipient {
 function normalizeRecentRecipient(recipient: KlydeRecentRecipient): AppRecipient {
   const bankName =
     recipient.destination.type === 'bank_account' ? recipient.destination.bankName : undefined;
-  const accountNumber =
+  const bankAccount =
     recipient.destination.type === 'bank_account'
-      ? recipient.destination.accountReference
+      ? parseBankAccountReference(recipient.destination.accountReference)
       : undefined;
   const walletAddress =
     recipient.destination.type === 'wallet' ? recipient.destination.address : undefined;
 
   return {
-    accountNumber,
+    accountNumber: bankAccount?.accountNumber,
+    bankCode: bankAccount?.bankCode,
     bankName,
     id: `klyde:${recipient.id}`,
     initials: getInitials(recipient.label),
@@ -320,6 +394,10 @@ function normalizeBalances(klydeBalances?: KlydeBalance[]): AppBalance[] {
       return emptyBalance;
     }
 
+    if (isStablecoinAsset(emptyBalance.code)) {
+      return emptyBalance;
+    }
+
     return {
       ...emptyBalance,
       displayAmount: formatMoneyAmount(balance.total),
@@ -328,18 +406,106 @@ function normalizeBalances(klydeBalances?: KlydeBalance[]): AppBalance[] {
   });
 }
 
+async function applyConfidentialBalanceDisplays(
+  balances: AppBalance[],
+  wallet?: KlydeWallet,
+  confidentialOperations: KlydeConfidentialOperation[] = [],
+): Promise<AppBalance[]> {
+  const owner = wallet?.address;
+  const chainId = getKlydeConfig().environment === 'production' ? 11155111 : 31337;
+  const confidentialBalances = await Promise.all(
+    balances.map(async (balance) => {
+      if (!isStablecoinAsset(balance.code)) {
+        return balance;
+      }
+
+      const privateBalance = await getPaayeeConfidentialBalanceDisplay({
+        assetCode: balance.code,
+        chainId,
+        confidentialOperations,
+        hasOperationHistory: hasConfidentialOperationHistory(confidentialOperations, balance.code),
+        owner,
+      });
+
+      if (privateBalance.status === 'available' && privateBalance.displayAmount) {
+        return {
+          ...balance,
+          confidentialBalanceHandle: privateBalance.encryptedHandle,
+          confidentialityStatus: privateBalance.status,
+          displayAmount: privateBalance.displayAmount,
+          numericAmount: parsePrivateStablecoinDisplay(privateBalance.displayAmount, balance.numericAmount),
+        };
+      }
+
+      if (privateBalance.status === 'handle_available') {
+        return {
+          ...balance,
+          confidentialBalanceHandle: privateBalance.encryptedHandle,
+          confidentialityStatus: privateBalance.status,
+          displayAmount: '$••••',
+          numericAmount: 0,
+        };
+      }
+
+      return {
+        ...balance,
+        confidentialityStatus: privateBalance.status,
+        displayAmount: privateBalance.displayAmount ?? '$••••',
+        numericAmount: 0,
+      };
+    }),
+  );
+
+  return confidentialBalances;
+}
+
+function hasConfidentialOperationHistory(
+  operations: KlydeConfidentialOperation[],
+  assetCode: Extract<SupportedBalanceCode, 'USDC' | 'USDT'>,
+): boolean {
+  return operations.some((operation) => {
+    const symbol = operation.symbol.trim().toUpperCase();
+    const underlyingSymbol =
+      typeof operation.metadata?.underlyingSymbol === 'string'
+        ? operation.metadata.underlyingSymbol.trim().toUpperCase()
+        : undefined;
+    const targetUnderlyingSymbol =
+      typeof operation.metadata?.targetUnderlyingSymbol === 'string'
+        ? operation.metadata.targetUnderlyingSymbol.trim().toUpperCase()
+        : undefined;
+    const sourceCurrency =
+      typeof operation.metadata?.sourceCurrency === 'string'
+        ? operation.metadata.sourceCurrency.trim().toUpperCase()
+        : undefined;
+
+    return (
+      (operation.mode === 'app_managed' || operation.mode === 'klyde_managed') &&
+      operation.status !== 'failed' &&
+      (symbol === `C${assetCode}` ||
+        underlyingSymbol === assetCode ||
+        targetUnderlyingSymbol === assetCode ||
+        sourceCurrency === assetCode)
+    );
+  });
+}
+
 function normalizeTransaction(transaction: KlydeTransaction): AppTransaction {
   const isIncoming = transaction.kind === 'deposit';
-  const amount = formatMoneyAmount(transaction.amount);
+  const assetCode = resolveTransactionAssetCode(transaction);
+  const amount = formatMoneyAmountWithAsset(transaction.amount, { assetCode });
   const settlementAmount = transaction.settlementAmount
-    ? formatMoneyAmount(transaction.settlementAmount)
+    ? formatMoneyAmountWithAsset(transaction.settlementAmount, {
+        assetCode: transaction.settlementAsset?.symbol ?? transaction.settlementAmount.currency,
+      })
     : undefined;
 
   return {
     amount: `${isIncoming ? '+' : '-'}${amount}`,
+    createdAt: transaction.createdAt,
     detail: createTransactionDetail(transaction),
     icon: isIncoming ? 'arrow-down-left' : 'trending-up',
     id: transaction.id,
+    initials: isStablecoinAssetCode(assetCode) ? getAssetBadgeText(assetCode) : undefined,
     kind: transaction.kind,
     receiptId: transaction.receiptId,
     secondaryAmount: settlementAmount,
@@ -349,13 +515,66 @@ function normalizeTransaction(transaction: KlydeTransaction): AppTransaction {
   };
 }
 
+function normalizeConversion(conversion: KlydeConversion): AppTransaction {
+  const isPrivateStablecoinConversion =
+    isStablecoinAssetCode(conversion.sourceAmount.currency) ||
+    isStablecoinAssetCode(conversion.targetAmount.currency);
+
+  if (isPrivateStablecoinConversion) {
+    return {
+      amount: 'Private amount',
+      createdAt: conversion.createdAt,
+      detail: `${titleCase(conversion.status.replace(/_/g, ' '))} · Decrypt receipt to view amount`,
+      icon: 'repeat',
+      id: conversion.id,
+      kind: 'conversion',
+      title: 'Private conversion',
+      tone: 'receipt',
+      when: formatTransactionDate(conversion.createdAt),
+    };
+  }
+
+  return {
+    amount: `+${formatMoneyAmount(conversion.targetAmount)}`,
+    createdAt: conversion.createdAt,
+    detail: createConversionDetail(conversion),
+    icon: 'repeat',
+    id: conversion.id,
+    kind: 'conversion',
+    secondaryAmount: `-${formatMoneyAmount(conversion.sourceAmount)}`,
+    title: 'Currency conversion',
+    tone: 'positive',
+    when: formatTransactionDate(conversion.createdAt),
+  };
+}
+
+function normalizePrivateOperation(envelope: PaayeePrivateOperationEnvelope): AppTransaction {
+  const isConversion = envelope.operationType === 'conversion';
+  const status = titleCase(envelope.status.replace(/_/g, ' '));
+
+  return {
+    amount: 'Private amount',
+    createdAt: envelope.createdAt,
+    detail: `${status} · Decrypt receipt to view amount`,
+    icon: isConversion ? 'repeat' : 'shield',
+    id: envelope.operationId,
+    kind: isConversion ? 'private-conversion' : 'private-send',
+    privateEnvelopeId: envelope.id,
+    title: isConversion ? 'Private conversion' : 'Private transfer',
+    tone: 'receipt',
+    when: formatTransactionDate(envelope.createdAt),
+  };
+}
+
 function createTransactionTitle(transaction: KlydeTransaction): string {
+  const assetCode = resolveTransactionAssetCode(transaction);
+
   if (transaction.kind === 'deposit') {
-    return `${transaction.amount.currency} deposit`;
+    return isStablecoinAssetCode(assetCode) ? `Public ${assetCode} deposit` : `${assetCode} deposit`;
   }
 
   if (transaction.kind === 'withdrawal') {
-    return `${transaction.amount.currency} withdrawal`;
+    return `${assetCode} withdrawal`;
   }
 
   if (transaction.kind === 'swap') {
@@ -372,8 +591,19 @@ function createTransactionTitle(transaction: KlydeTransaction): string {
 function createTransactionDetail(transaction: KlydeTransaction): string {
   const status = titleCase(transaction.status.replace(/_/g, ' '));
   const reference = transaction.reference ? ` · ${truncateMiddle(transaction.reference, 32)}` : '';
+  const assetCode = resolveTransactionAssetCode(transaction);
+
+  if (transaction.kind === 'deposit' && isStablecoinAssetCode(assetCode)) {
+    return `${status} public ingress${reference}`;
+  }
 
   return `${status}${reference}`;
+}
+
+function createConversionDetail(conversion: KlydeConversion): string {
+  const status = titleCase(conversion.status.replace(/_/g, ' '));
+
+  return `${status} · ${conversion.sourceAmount.currency} to ${conversion.targetAmount.currency}`;
 }
 
 function truncateMiddle(value: string, maxLength: number): string {
@@ -388,13 +618,71 @@ function truncateMiddle(value: string, maxLength: number): string {
 
 function createTotalDisplay(
   balances: AppBalance[],
+  displayCurrency: DisplayCurrency,
   valuation?: KlydeWalletSnapshot['valuation'],
+  rates?: KlydeRates,
 ): string {
-  if (valuation?.status === 'available' && valuation.total.currency.toUpperCase() === 'NGN') {
+  if (runtimeConfig.zamaMobileRuntimeEnabled) {
+    return createPrivateTotalDisplay(balances, displayCurrency, rates);
+  }
+
+  if (valuation?.status === 'available') {
     return formatMoneyAmount(valuation.total);
   }
 
+  if (displayCurrency === 'USD') {
+    return '$0.00';
+  }
+
   return balances.find((balance) => balance.code === 'NGN')?.displayAmount ?? '₦0.00';
+}
+
+function createPrivateTotalDisplay(
+  balances: AppBalance[],
+  displayCurrency: DisplayCurrency,
+  rates?: KlydeRates,
+): string {
+  if (balances.some((balance) => isMaskedBalanceDisplay(balance.displayAmount))) {
+    return displayCurrency === 'USD' ? '$••••' : '₦••••';
+  }
+
+  const ngnBalance = balances.find((balance) => balance.code === 'NGN');
+  const ngnAmount = ngnBalance?.numericAmount ?? 0;
+
+  if (displayCurrency === 'USD') {
+    const usdRate = getRateFromBaseCurrency(rates, 'USD');
+    const ngnAsUsd = usdRate ? ngnAmount * usdRate : 0;
+    const stablecoinTotal = balances
+      .filter((balance) => isStablecoinAssetCode(balance.code))
+      .reduce((total, balance) => total + balance.numericAmount, 0);
+
+    return formatDisplayNumber(stablecoinTotal + ngnAsUsd, '$');
+  }
+
+  const stablecoinAsNgn = createStablecoinLocalValue(balances, rates);
+
+  return formatDisplayNumber(ngnAmount + stablecoinAsNgn, '₦');
+}
+
+function createStablecoinLocalValue(balances: AppBalance[], rates?: KlydeRates): number {
+  return balances
+    .filter((balance) => isStablecoinAssetCode(balance.code))
+    .reduce((total, balance) => {
+      const rate = getRateFromBaseCurrency(rates, balance.code) ?? getRateFromBaseCurrency(rates, 'USD');
+
+      return total + (rate ? balance.numericAmount / rate : 0);
+    }, 0);
+}
+
+function getRateFromBaseCurrency(rates: KlydeRates | undefined, currency: string): number | undefined {
+  if (!rates || rates.baseCurrency.toUpperCase() !== 'NGN') {
+    return undefined;
+  }
+
+  const rate = rates.rates.find((item) => item.currency.toUpperCase() === currency.toUpperCase());
+  const numericRate = Number(rate?.rate);
+
+  return Number.isFinite(numericRate) && numericRate > 0 ? numericRate : undefined;
 }
 
 function createRecipientNote(beneficiary: PaayeeBeneficiary): string {
@@ -417,7 +705,11 @@ function createRecipientNote(beneficiary: PaayeeBeneficiary): string {
 
 function createRecentRecipientNote(recipient: KlydeRecentRecipient): string {
   if (recipient.destination.type === 'bank_account') {
-    return `${recipient.destination.bankName ?? 'Bank account'} ending ${recipient.destination.accountReference.slice(-4)}`;
+    const bankAccount = parseBankAccountReference(recipient.destination.accountReference);
+
+    return `${recipient.destination.bankName ?? 'Bank account'} ending ${
+      bankAccount.accountNumber.slice(-4) || '----'
+    }`;
   }
 
   if (recipient.destination.type === 'wallet') {
@@ -425,6 +717,24 @@ function createRecentRecipientNote(recipient: KlydeRecentRecipient): string {
   }
 
   return 'Recent withdrawal';
+}
+
+function parseBankAccountReference(accountReference: string): {
+  accountName?: string;
+  accountNumber: string;
+  bankCode?: string;
+} {
+  const [bankCode, accountNumber, ...accountNameParts] = accountReference.split(':');
+
+  if (!accountNumber) {
+    return { accountNumber: accountReference };
+  }
+
+  return {
+    accountName: accountNameParts.join(':') || undefined,
+    accountNumber,
+    bankCode,
+  };
 }
 
 function cleanNamePart(value?: string): string {
@@ -442,11 +752,26 @@ function formatMoneyAmount(amount: MoneyAmount): string {
   return `${symbol}${amount.display}`;
 }
 
+function formatMoneyAmountWithAsset(amount: MoneyAmount, options: { assetCode?: string } = {}): string {
+  const formatted = formatMoneyAmount(amount);
+  const assetCode = (options.assetCode ?? amount.currency).toUpperCase();
+
+  if (isStablecoinAssetCode(assetCode)) {
+    return `${formatted} ${assetCode}`;
+  }
+
+  return formatted;
+}
+
 function formatDisplayNumber(value: number, symbol: string): string {
   return `${symbol}${new Intl.NumberFormat('en-US', {
     maximumFractionDigits: value % 1 === 0 ? 0 : 2,
     minimumFractionDigits: value % 1 === 0 ? 0 : 2,
   }).format(value)}`;
+}
+
+function resolveTransactionAssetCode(transaction: KlydeTransaction): string {
+  return (transaction.settlementAsset?.symbol ?? transaction.amount.currency).toUpperCase();
 }
 
 function parseMoneyAmount(amount: MoneyAmount): number {
@@ -455,6 +780,16 @@ function parseMoneyAmount(amount: MoneyAmount): number {
   }
 
   return Number(amount.display.replace(/,/g, ''));
+}
+
+function parsePrivateStablecoinDisplay(value: string, fallback: number): number {
+  const numericValue = Number(value.replace(/[^\d.-]/g, ''));
+
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function isMaskedBalanceDisplay(value: string): boolean {
+  return value.includes('••••');
 }
 
 function getCurrencySymbol(currency: string): string {
@@ -471,6 +806,24 @@ function getCurrencySymbol(currency: string): string {
 
 function isSupportedBalanceCode(code: string): code is SupportedBalanceCode {
   return supportedBalanceCodes.includes(code as SupportedBalanceCode);
+}
+
+function isStablecoinAssetCode(code: string): code is Extract<SupportedBalanceCode, 'USDC' | 'USDT'> {
+  return code.toUpperCase() === 'USDC' || code.toUpperCase() === 'USDT';
+}
+
+function getAssetBadgeText(assetCode: string): string {
+  const normalized = assetCode.toUpperCase();
+
+  if (normalized === 'USDC') {
+    return 'C';
+  }
+
+  if (normalized === 'USDT') {
+    return 'T';
+  }
+
+  return normalized.slice(0, 1);
 }
 
 function formatTransactionDate(value: string): string {

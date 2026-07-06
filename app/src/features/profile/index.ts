@@ -5,6 +5,7 @@ export {
   ChangePasswordScreen,
   ChangePinIntroScreen,
   CurrentPinScreen,
+  DisplayCurrencyScreen,
   DepositLimitsScreen,
   EditProfileScreen,
   ProfileDetailsScreen,

@@ -1,5 +1,6 @@
 import { Feather } from '@react-native-vector-icons/feather';
 import { Image, Pressable, Text, View } from 'react-native';
+import type { ReactNode } from 'react';
 
 import UsdcLogo from '../../../../../assets/icons/usdc.svg';
 import UsdtLogo from '../../../../../assets/icons/usdt.svg';
@@ -117,12 +118,15 @@ export function FooterButton({
   );
 }
 
-export function AssetPill({ asset, onPress }: { asset: SendAssetOption; onPress: () => void }) {
+export function AssetPill({ asset, onPress }: { asset: SendAssetOption; onPress?: () => void }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={styles.currencyPill}>
+    <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
+      onPress={onPress}
+      style={styles.currencyPill}>
       <AssetIcon asset={asset} size={24} />
       <Text style={styles.currencyCode}>{asset.code}</Text>
-      <Feather name="chevron-down" size={18} color="#202633" />
+      {onPress ? <Feather name="chevron-down" size={18} color="#202633" /> : null}
     </Pressable>
   );
 }
@@ -155,11 +159,19 @@ export function RecipientHeader({ recipient }: { recipient: SendRecipient & { fi
   );
 }
 
-export function SummaryRow({ label, value }: { label: string; value: string }) {
+export function SummaryRow({
+  label,
+  value,
+  valueNode,
+}: {
+  label: string;
+  value?: string;
+  valueNode?: ReactNode;
+}) {
   return (
     <View style={styles.summaryRow}>
       <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={styles.summaryValue}>{value}</Text>
+      {valueNode ?? <Text style={styles.summaryValue}>{value}</Text>}
     </View>
   );
 }

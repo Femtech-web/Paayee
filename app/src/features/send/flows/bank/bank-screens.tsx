@@ -1,11 +1,13 @@
 import { Feather } from '@react-native-vector-icons/feather';
 import { type Href, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
+import { runtimeConfig } from '@/config/runtime';
 import { useAppData } from '@/features/app-data';
+import { listKlydeBanks, resolveKlydeBankAccount } from '@/integrations/klyde';
 import {
   bankOptions,
   fallbackBankRecipient,
@@ -114,15 +116,120 @@ export function SendBankScreen() {
 
 export function NewBankRecipientScreen() {
   const router = useRouter();
+  const [banks, setBanks] = useState<BankOption[]>(bankOptions);
   const [selectedBank, setSelectedBank] = useState<BankOption | null>(null);
   const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [bankLoadError, setBankLoadError] = useState('');
+  const [resolveError, setResolveError] = useState('');
+  const [resolvingAccount, setResolvingAccount] = useState(false);
   const [bankQuery, setBankQuery] = useState('');
   const [bankPickerOpen, setBankPickerOpen] = useState(false);
-  const isResolved = Boolean(selectedBank && accountNumber.length === 10);
-  const accountName = isResolved ? 'Bank recipient' : '';
-  const filteredBanks = bankOptions.filter((bank) =>
+  const fallbackAccountName =
+    !runtimeConfig.realIntegrationsEnabled && selectedBank && accountNumber.length === 10
+      ? 'Bank recipient'
+      : '';
+  const resolvedAccountName = accountName || fallbackAccountName;
+  const missingBankCodeError =
+    runtimeConfig.realIntegrationsEnabled &&
+    selectedBank &&
+    accountNumber.length === 10 &&
+    !selectedBank.code
+      ? 'This bank cannot be verified right now. Please select another bank.'
+      : '';
+  const isResolved = Boolean(selectedBank && resolvedAccountName && accountNumber.length === 10);
+  const filteredBanks = banks.filter((bank) =>
     bank.name.toLowerCase().includes(bankQuery.trim().toLowerCase()),
   );
+
+  useEffect(() => {
+    if (!runtimeConfig.realIntegrationsEnabled) {
+      return;
+    }
+
+    let mounted = true;
+
+    listKlydeBanks({ country: 'NG', currency: 'NGN' })
+      .then((result) => {
+        if (!mounted) {
+          return;
+        }
+
+        setBanks(
+          result.map((bank) => ({
+            code: bank.code,
+            id: bank.id || bank.code,
+            name: bank.name,
+            provider: bank.provider,
+          })),
+        );
+        setBankLoadError('');
+      })
+      .catch((error) => {
+        if (!mounted) {
+          return;
+        }
+
+        setBankLoadError(error instanceof Error ? error.message : 'Could not load live bank list.');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedBank || accountNumber.length !== 10) {
+      return;
+    }
+
+    if (!runtimeConfig.realIntegrationsEnabled) {
+      return;
+    }
+
+    if (!selectedBank.code) {
+      return;
+    }
+
+    let mounted = true;
+    const timer = setTimeout(() => {
+      setResolvingAccount(true);
+
+      resolveKlydeBankAccount({
+        accountNumber,
+        bankCode: selectedBank.code ?? '',
+        bankName: selectedBank.name,
+        country: 'NG',
+      })
+        .then((result) => {
+          if (!mounted) {
+            return;
+          }
+
+          setAccountName(result.accountName);
+          setResolveError('');
+        })
+        .catch((error) => {
+          if (!mounted) {
+            return;
+          }
+
+          setResolveError(
+            error instanceof Error ? error.message : 'Could not confirm this account name.',
+          );
+        })
+        .finally(() => {
+          if (mounted) {
+            setResolvingAccount(false);
+          }
+        });
+    }, 450);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+    };
+  }, [accountNumber, selectedBank]);
 
   return (
     <ScreenShell>
@@ -147,13 +254,19 @@ export function NewBankRecipientScreen() {
             </Text>
             <Feather name="chevron-down" size={20} color="#3F4653" />
           </Pressable>
+          {bankLoadError ? <Text style={styles.errorText}>{bankLoadError}</Text> : null}
         </FieldLabel>
 
         <FieldLabel label="Account number">
           <View style={styles.field}>
             <TextInput
               value={accountNumber}
-              onChangeText={(value) => setAccountNumber(value.replace(/\D/g, '').slice(0, 10))}
+              onChangeText={(value) => {
+                setAccountNumber(value.replace(/\D/g, '').slice(0, 10));
+                setAccountName('');
+                setResolveError('');
+                setResolvingAccount(false);
+              }}
               keyboardType="number-pad"
               placeholder="Enter account number"
               placeholderTextColor="#B7BDC8"
@@ -164,10 +277,13 @@ export function NewBankRecipientScreen() {
 
         <FieldLabel label="Account name">
           <View style={[styles.field, styles.fieldMuted]}>
-            <Text style={[styles.fieldText, !accountName && styles.placeholder]}>
-              {accountName || 'Account name'}
+            <Text style={[styles.fieldText, !resolvedAccountName && styles.placeholder]}>
+              {resolvedAccountName || (resolvingAccount ? 'Confirming account...' : 'Account name')}
             </Text>
           </View>
+          {resolveError || missingBankCodeError ? (
+            <Text style={styles.errorText}>{resolveError || missingBankCodeError}</Text>
+          ) : null}
         </FieldLabel>
       </FadeInView>
 
@@ -176,9 +292,11 @@ export function NewBankRecipientScreen() {
         label="Continue"
         onPress={() =>
           router.push(
-            `/send/bank/amount?name=${encodeURIComponent(accountName)}&bank=${encodeURIComponent(
+            `/send/bank/amount?name=${encodeURIComponent(resolvedAccountName)}&bank=${encodeURIComponent(
               selectedBank?.name ?? '',
-            )}&account=${accountNumber}&initials=AO` as Href,
+            )}&account=${accountNumber}&initials=${encodeURIComponent(
+              createInitials(resolvedAccountName),
+            )}&bankCode=${encodeURIComponent(selectedBank?.code ?? '')}` as Href,
           )
         }
       />
@@ -188,6 +306,8 @@ export function NewBankRecipientScreen() {
         onQueryChange={setBankQuery}
         onSelect={(bank) => {
           setSelectedBank(bank);
+          setAccountName('');
+          setResolveError('');
           setBankPickerOpen(false);
         }}
         open={bankPickerOpen}
@@ -200,10 +320,15 @@ export function NewBankRecipientScreen() {
 
 export function SendAmountScreen() {
   return (
-      <SharedAmountScreen
+    <SharedAmountScreen
       defaultSendAsset={defaultNgnAsset}
       fallbackRecipient={fallbackBankRecipient}
       reviewPath="/send/bank/review"
     />
   );
+}
+
+function createInitials(value: string) {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  return `${parts[0]?.[0] ?? 'B'}${parts[1]?.[0] ?? parts[0]?.[1] ?? 'R'}`.toUpperCase();
 }

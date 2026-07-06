@@ -1,5 +1,6 @@
 export { AccountVerificationScreen } from './account-verification-screen';
 export { ChangeEmailScreen } from './change-email-screen';
+export { DisplayCurrencyScreen } from './display-currency-screen';
 export { EditProfileScreen } from './edit-profile-screen';
 export {
   DepositLimitsScreen,

@@ -1,0 +1,9 @@
+artifacts/
+cache/
+coverage/
+coverage.json
+deployments/
+node_modules/
+typechain-types/
+types/
+paayee-confidential-assets*.json

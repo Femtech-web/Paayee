@@ -154,6 +154,11 @@ export const profileStyles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#FFF3E8',
   },
+  rowIconText: {
+    color: Colors.light.primary,
+    fontFamily: Fonts.demi,
+    fontSize: 18,
+  },
   rowText: {
     flex: 1,
     minWidth: 0,
@@ -375,6 +380,23 @@ export const profileStyles = StyleSheet.create({
     fontFamily: Fonts.sans,
     fontSize: 15,
     lineHeight: 22,
+  },
+  preferenceMetaRow: {
+    marginTop: -8,
+    paddingLeft: 48,
+    paddingRight: 4,
+    paddingBottom: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  preferenceMeta: {
+    flex: 1,
+    minWidth: 0,
+    color: '#687184',
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    lineHeight: 19,
   },
   securityHero: {
     flexDirection: 'row',

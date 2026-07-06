@@ -467,6 +467,11 @@ export const sendStyles = StyleSheet.create({
     fontFamily: Fonts.demi,
     fontSize: 15,
   },
+  summaryValueSkeleton: {
+    width: 92,
+    height: 17,
+    borderRadius: 9,
+  },
   reviewPanel: {
     gap: 14,
     paddingVertical: 6,

@@ -1,6 +1,6 @@
 import { Feather } from '@react-native-vector-icons/feather';
 import { type Href, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -21,13 +21,35 @@ const quickActions = [
   { label: 'Send', icon: 'arrow-up-right' },
   { label: 'Chat', icon: 'message-circle' },
 ] as const;
+const homeTransactionLimit = 3;
 
 export function HomeScreen() {
-  const [balanceVisible, setBalanceVisible] = useState(true);
-  const { data, loading } = useAppData();
+  const [balanceVisible, setBalanceVisible] = useState(false);
+  const [balanceRevealLoading, setBalanceRevealLoading] = useState(false);
+  const { data, loading, refresh } = useAppData();
+  const latestSeenActivityId = useRef<string | undefined>(undefined);
   const router = useRouter();
   const balances = data?.balances ?? [];
   const transactions = data?.transactions ?? [];
+  const recentTransactions = transactions.slice(0, homeTransactionLimit);
+  const latestActivityId = transactions[0]?.id;
+  const totalDisplay = formatPrivateBalanceDisplay(data?.totalDisplay ?? '₦0.00', balanceVisible, 'total');
+
+  useEffect(() => {
+    if (!latestActivityId) {
+      return;
+    }
+
+    if (!latestSeenActivityId.current) {
+      latestSeenActivityId.current = latestActivityId;
+      return;
+    }
+
+    if (latestSeenActivityId.current !== latestActivityId) {
+      latestSeenActivityId.current = latestActivityId;
+      setBalanceVisible(false);
+    }
+  }, [latestActivityId]);
 
   return (
     <View style={styles.screen}>
@@ -58,15 +80,30 @@ export function HomeScreen() {
               <FadeInView delay={60} style={styles.balanceBlock}>
                 <Text style={styles.balancePill}>Total private balance</Text>
                 <View style={styles.balanceRow}>
-                  {balanceVisible ? (
+                  {balanceRevealLoading && balanceVisible ? (
+                    <SkeletonBlock style={styles.balanceAmountSkeleton} />
+                  ) : balanceVisible ? (
                     <Text style={styles.balance}>
-                      {data?.totalDisplay ?? '₦0.00'}
+                      {totalDisplay}
                     </Text>
                   ) : (
-                    <Text style={styles.balanceHidden}>••••••</Text>
+                    <Text style={styles.balanceHidden}>{totalDisplay}</Text>
                   )}
                   <Pressable
-                    onPress={() => setBalanceVisible((visible) => !visible)}
+                    onPress={async () => {
+                      if (balanceVisible) {
+                        setBalanceVisible(false);
+                        return;
+                      }
+
+                      setBalanceVisible(true);
+                      setBalanceRevealLoading(true);
+                      try {
+                        await refresh({ silent: true });
+                      } finally {
+                        setBalanceRevealLoading(false);
+                      }
+                    }}
                     style={styles.balanceToggle}
                     accessibilityRole="button"
                     accessibilityLabel={balanceVisible ? 'Hide balance' : 'Show balance'}>
@@ -137,9 +174,13 @@ export function HomeScreen() {
                       onPress={() => router.push(`/asset/${asset.code.toLowerCase()}` as Href)}
                       style={styles.balanceCard}>
                       <BalanceCardHeader asset={asset} />
-                      <Text style={styles.balanceCardAmount}>
-                        {balanceVisible ? asset.displayAmount : '••••'}
-                      </Text>
+                      {balanceRevealLoading && balanceVisible ? (
+                        <SkeletonBlock style={styles.balanceCardAmountSkeleton} />
+                      ) : (
+                        <Text style={styles.balanceCardAmount}>
+                          {formatPrivateBalanceDisplay(asset.displayAmount, balanceVisible, 'asset')}
+                        </Text>
+                      )}
                       <Text style={styles.balanceCardLabel}>{asset.label}</Text>
                     </PressableScale>
                   ))
@@ -149,27 +190,32 @@ export function HomeScreen() {
 
             <FadeInView delay={280} style={styles.recentHeader}>
               <Text style={styles.sectionEyebrow}>Recent transactions</Text>
-              <PressableScale
-                accessibilityRole="button"
-                accessibilityLabel="See all transactions"
-                onPress={() => router.push('/transactions' as Href)}
-                style={styles.seeAllButton}>
-                <Text style={styles.seeAll}>See all</Text>
-              </PressableScale>
+              {transactions.length > homeTransactionLimit ? (
+                <PressableScale
+                  accessibilityRole="button"
+                  accessibilityLabel="See all transactions"
+                  onPress={() => router.push('/transactions' as Href)}
+                  style={styles.seeAllButton}>
+                  <Text style={styles.seeAll}>See all</Text>
+                </PressableScale>
+              ) : null}
             </FadeInView>
 
             <FadeInView delay={310} style={styles.activityList}>
-              {transactions.length ? (
-                transactions.map((item) => (
+              {recentTransactions.length ? (
+                recentTransactions.map((item) => (
                 <PressableScale
                   key={item.id}
                   onPress={() => {
                     const receiptParam = item.receiptId
                       ? `&receiptId=${encodeURIComponent(item.receiptId)}`
                       : '';
+                    const privateEnvelopeParam = item.privateEnvelopeId
+                      ? `&privateEnvelopeId=${encodeURIComponent(item.privateEnvelopeId)}`
+                      : '';
 
                     router.push(
-                      `/transaction/${encodeURIComponent(item.id)}?kind=${item.kind}${receiptParam}` as Href,
+                      `/transaction/${encodeURIComponent(item.id)}?kind=${item.kind}${receiptParam}${privateEnvelopeParam}` as Href,
                     );
                   }}
                   style={styles.activityRow}>
@@ -201,6 +247,26 @@ export function HomeScreen() {
       </SafeAreaView>
     </View>
   );
+}
+
+function formatPrivateBalanceDisplay(
+  value: string,
+  visible: boolean,
+  surface: 'asset' | 'total',
+): string {
+  if (!visible) {
+    return surface === 'total' ? '••••••' : '••••';
+  }
+
+  return stripMaskedCurrencySymbol(value);
+}
+
+function stripMaskedCurrencySymbol(value: string): string {
+  if (!value.includes('••••')) {
+    return value;
+  }
+
+  return value.replace(/^[₦$]\s*/, '');
 }
 
 function BalanceCardHeader({ asset }: { asset: AppBalance }) {

@@ -8,6 +8,7 @@ import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
 import { signOutCurrentUser } from '@/features/auth';
 import { useAppData } from '@/features/app-data';
+import { useDisplayCurrencyPreference } from '@/features/preferences/display-currency-preference';
 
 import { profileStyles as styles } from '../profile-screen.styles';
 import { ProfileShell } from '../components/profile-shell';
@@ -16,6 +17,7 @@ import { Section, SettingsRow } from '../components/profile-ui';
 export function ProfileHomeScreen() {
   const router = useRouter();
   const { data, loading } = useAppData();
+  const { currency: displayCurrency } = useDisplayCurrencyPreference();
   const [errorMessage, setErrorMessage] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
   const user = data?.profile;
@@ -101,6 +103,13 @@ export function ProfileHomeScreen() {
           title="Account verification"
           badge={verificationBadge}
           onPress={() => router.push('/profile/verification' as Href)}
+        />
+        <SettingsRow
+          icon="credit-card"
+          title="Total balance currency"
+          badge={loading ? undefined : displayCurrency}
+          isLast
+          onPress={() => router.push('/profile/display-currency' as Href)}
         />
       </Section>
 

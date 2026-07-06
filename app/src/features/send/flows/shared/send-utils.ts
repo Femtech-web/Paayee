@@ -16,7 +16,13 @@ export function readParam(value: string | string[] | undefined) {
 }
 
 export function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(value || 0);
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const hasDecimals = Math.abs(safeValue % 1) > 0;
+
+  return new Intl.NumberFormat('en-NG', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: hasDecimals ? 2 : 0,
+  }).format(safeValue);
 }
 
 export function formatMoney(value: number, asset: SendAssetOption) {
@@ -72,9 +78,13 @@ export function readRateLabel(sendAsset: SendAssetOption, receiveAsset: SendAsse
 }
 
 export function createBankAmountHref(recipient: SendRecipient) {
+  const bankCodeQuery = recipient.bankCode
+    ? `&bankCode=${encodeURIComponent(recipient.bankCode)}`
+    : '';
+
   return `/send/bank/amount?name=${encodeURIComponent(recipient.name)}&bank=${encodeURIComponent(
     recipient.bankName,
-  )}&account=${recipient.accountNumber}&initials=${recipient.initials}` as Href;
+  )}&account=${recipient.accountNumber}&initials=${recipient.initials}${bankCodeQuery}` as Href;
 }
 
 export function createHandleAmountHref(recipient: SendRecipient) {

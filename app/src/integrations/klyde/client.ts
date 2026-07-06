@@ -3,15 +3,26 @@ import * as SecureStore from 'expo-secure-store';
 import type {
   DepositSource,
   KlydeBalance,
+  KlydeAutoShieldPolicy,
+  KlydeBank,
   KlydeConversion,
+  KlydeConfidentialAmountReference,
+  KlydeConfidentialAsset,
+  KlydeConfidentialOperation,
   KlydeDeposit,
   KlydeFundingInstructions,
+  KlydeInternalTransfer,
   KlydeQuote,
+  KlydeRates,
   KlydeRecentRecipient,
   KlydeReceipt,
   KlydeTimelineItem,
   KlydeTransaction,
+  KlydeTransactionLimit,
+  KlydeTransactionLimitAction,
+  KlydeTransactionLimits,
   KlydeUser,
+  KlydeResolvedBankAccount,
   KlydeWallet,
   KlydeWalletSnapshot,
   KlydeWithdrawal,
@@ -22,12 +33,16 @@ import type {
 import {
   type BootstrapHostAppSessionInput,
   createKlyde,
+  type CreateAutoShieldPolicyInput,
   type CreateDepositInput,
+  type CreateInternalTransferInput,
   type CreateKlydeOptions,
   type ExecuteConversionInput,
   type CreateWithdrawalInput,
   type GetConversionInput,
   type GetFundingInstructionsInput,
+  type GetRatesInput,
+  type GetTransactionLimitsInput,
   type GetReceiptInput,
   type GetWalletSnapshotInput,
   type KlydeAuthRequestOptions,
@@ -36,14 +51,29 @@ import {
   type KlydePaginatedResponse,
   type KlydeRequestOptions,
   type KlydeSdkCommands,
+  type PrepareConfidentialOperationInput,
+  type ConfidentialBalanceQuery,
+  type CompleteConfidentialOperationInput,
+  type CompleteConfidentialSettlementInput,
+  type CompleteConfidentialSettlementResult,
+  type ListAutoShieldPoliciesInput,
+  type ListBanksInput,
+  type ListConfidentialOperationsInput,
+  type ListConversionsInput,
   type ListReceiptsInput,
   type ListRecentRecipientsInput,
   type ListTransactionsInput,
   type QuoteConversionInput,
   type QuoteDepositInput,
   type QuoteWithdrawalInput,
+  type ResolveBankAccountInput,
+  type MarkConfidentialOperationSubmittedInput,
   type SimulateFundingReceivedInput,
   type SimulateFundingReceivedResult,
+  type SignCurrentWalletTypedDataInput,
+  type SignCurrentWalletTypedDataResult,
+  type SendCurrentWalletTransactionInput,
+  type SendCurrentWalletTransactionResult,
   type StartEmailVerificationInput,
   type StartVerificationResult,
   type VerifyEmailInput,
@@ -62,28 +92,47 @@ let hydratedClientPromise: Promise<KlydeClient> | undefined;
 export type {
   BootstrapHostAppSessionInput,
   CreateDepositInput,
+  CreateInternalTransferInput,
   CreateWithdrawalInput,
   DepositSource,
   GetReceiptInput,
+  CreateAutoShieldPolicyInput,
   KlydeAuthResult,
+  KlydeAutoShieldPolicy,
   KlydeBalance,
+  KlydeBank,
+  KlydeConfidentialAmountReference,
+  KlydeConfidentialAsset,
+  KlydeConfidentialOperation,
   KlydeConversion,
   KlydeDeposit,
   KlydeFundingInstructions,
+  KlydeInternalTransfer,
   KlydeQuote,
+  KlydeRates,
   KlydePaginatedResponse,
   KlydeRecentRecipient,
   KlydeReceipt,
   KlydeRequestOptions,
   KlydeTimelineItem,
   KlydeTransaction,
+  KlydeTransactionLimit,
+  KlydeTransactionLimitAction,
+  KlydeTransactionLimits,
   KlydeUser,
+  KlydeResolvedBankAccount,
   KlydeWallet,
   KlydeWalletSnapshot,
   KlydeWithdrawal,
   ExecuteConversionInput,
   GetConversionInput,
   GetFundingInstructionsInput,
+  GetRatesInput,
+  GetTransactionLimitsInput,
+  ListAutoShieldPoliciesInput,
+  ListBanksInput,
+  ListConfidentialOperationsInput,
+  ListConversionsInput,
   ListReceiptsInput,
   ListRecentRecipientsInput,
   ListTransactionsInput,
@@ -91,13 +140,23 @@ export type {
   QuoteConversionInput,
   QuoteDepositInput,
   QuoteWithdrawalInput,
+  ResolveBankAccountInput,
   SimulateFundingReceivedInput,
   SimulateFundingReceivedResult,
+  SignCurrentWalletTypedDataInput,
+  SignCurrentWalletTypedDataResult,
+  SendCurrentWalletTransactionInput,
+  SendCurrentWalletTransactionResult,
   SettlementAsset,
   StartEmailVerificationInput,
   StartVerificationResult,
   VerifyEmailInput,
   WithdrawalDestination,
+  ConfidentialBalanceQuery,
+  CompleteConfidentialOperationInput,
+  CompleteConfidentialSettlementInput,
+  CompleteConfidentialSettlementResult,
+  MarkConfidentialOperationSubmittedInput,
 };
 
 export type KlydeMoneyAmount = MoneyAmount;
@@ -219,6 +278,48 @@ export async function getKlydeBalances(
   return withKlydeClient((client) => client.getBalances(input, options));
 }
 
+export async function signKlydeCurrentWalletTypedData(
+  input: SignCurrentWalletTypedDataInput,
+  options?: KlydeRequestOptions,
+): Promise<SignCurrentWalletTypedDataResult> {
+  return withKlydeClient((client) => client.signCurrentWalletTypedData(input, options));
+}
+
+export async function sendKlydeCurrentWalletTransaction(
+  input: SendCurrentWalletTransactionInput,
+  options?: KlydeRequestOptions,
+): Promise<SendCurrentWalletTransactionResult> {
+  return withKlydeClient((client) => client.sendCurrentWalletTransaction(input, options));
+}
+
+export async function getKlydeTransactionLimits(
+  input?: GetTransactionLimitsInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeTransactionLimits> {
+  return withKlydeClient((client) => client.getTransactionLimits(input, options));
+}
+
+export async function getKlydeRates(
+  input: GetRatesInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeRates> {
+  return withKlydeClient((client) => client.getRates(input, options));
+}
+
+export async function listKlydeBanks(
+  input?: ListBanksInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeBank[]> {
+  return withKlydeClient((client) => client.listBanks(input, options));
+}
+
+export async function resolveKlydeBankAccount(
+  input: ResolveBankAccountInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeResolvedBankAccount> {
+  return withKlydeClient((client) => client.resolveBankAccount(input, options));
+}
+
 export async function getKlydeAccountSnapshot(options?: KlydeRequestOptions): Promise<{
   user: KlydeUser;
   wallet: KlydeWallet;
@@ -258,6 +359,117 @@ export async function createKlydeWithdrawal(
   return withKlydeClient((client) => client.withdraw(input, options));
 }
 
+export async function createKlydeInternalTransfer(
+  input: CreateInternalTransferInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeInternalTransfer> {
+  return withKlydeClient((client) => client.createInternalTransfer(input, options));
+}
+
+export async function prepareKlydeConfidentialOperation(
+  input: PrepareConfidentialOperationInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeConfidentialOperation> {
+  return withKlydeClient((client) => client.prepareConfidentialOperation(input, options));
+}
+
+export async function markKlydeConfidentialOperationSubmitted(
+  input: MarkConfidentialOperationSubmittedInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeConfidentialOperation> {
+  return withKlydeClient((client) => client.markConfidentialOperationSubmitted(input, options));
+}
+
+export async function completeKlydeConfidentialOperation(
+  input: CompleteConfidentialOperationInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeConfidentialOperation> {
+  return withKlydeClient((client) => client.completeConfidentialOperation(input, options));
+}
+
+export async function completeKlydeConfidentialSettlement(
+  input: CompleteConfidentialSettlementInput,
+  options?: KlydeRequestOptions,
+): Promise<CompleteConfidentialSettlementResult> {
+  return withKlydeClient((client) => {
+    const completeConfidentialSettlement = (
+      client as KlydeClient & {
+        completeConfidentialSettlement?: (
+          input: CompleteConfidentialSettlementInput,
+          options?: KlydeRequestOptions,
+        ) => Promise<CompleteConfidentialSettlementResult>;
+      }
+    ).completeConfidentialSettlement?.bind(client);
+
+    if (completeConfidentialSettlement) {
+      return completeConfidentialSettlement(input, options);
+    }
+
+    const { operationId, ...body } = input;
+    const request = (client as unknown as {
+      request?: (
+        method: 'POST',
+        path: string,
+        body: Omit<CompleteConfidentialSettlementInput, 'operationId'>,
+        options?: KlydeRequestOptions,
+      ) => Promise<CompleteConfidentialSettlementResult>;
+    }).request?.bind(client);
+
+    if (!request) {
+      throw new Error('This Klyde SDK build does not support confidential settlement completion.');
+    }
+
+    return request(
+      'POST',
+      `/v1/privacy/confidential-operations/${encodeURIComponent(operationId)}/settlement`,
+      body,
+      options,
+    );
+  });
+}
+
+export async function listKlydeConfidentialOperations(
+  input?: ListConfidentialOperationsInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeConfidentialOperation[]> {
+  return withKlydeClient((client) => client.listConfidentialOperations(input, options));
+}
+
+export async function listKlydeAutoShieldPolicies(
+  input?: ListAutoShieldPoliciesInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeAutoShieldPolicy[]> {
+  return withKlydeClient((client) => client.listAutoShieldPolicies(input, options));
+}
+
+export async function createKlydeAutoShieldPolicy(
+  input: CreateAutoShieldPolicyInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydeAutoShieldPolicy> {
+  return withKlydeClient((client) => client.createAutoShieldPolicy(input, options));
+}
+
+export async function resolveKlydeConfidentialAsset(
+  input: ConfidentialBalanceQuery,
+  options?: KlydeRequestOptions,
+): Promise<KlydeConfidentialAsset> {
+  return withKlydeClient((client) => client.resolveConfidentialAsset(input, options));
+}
+
+export async function getKlydeConfidentialBalanceHandle(
+  input: ConfidentialBalanceQuery,
+  options?: KlydeRequestOptions,
+) {
+  return withKlydeClient((client) => client.getConfidentialBalanceHandle(input, options));
+}
+
+export async function getKlydeConfidentialBalance(
+  input: ConfidentialBalanceQuery,
+  options?: KlydeRequestOptions,
+) {
+  return withKlydeClient((client) => client.getConfidentialBalance(input, options));
+}
+
 export async function quoteKlydeConversion(
   input: QuoteConversionInput,
   options?: KlydeRequestOptions,
@@ -277,6 +489,13 @@ export async function getKlydeConversion(
   options?: KlydeRequestOptions,
 ): Promise<KlydeConversion> {
   return withKlydeClient((client) => client.getConversion(input, options));
+}
+
+export async function listKlydeConversions(
+  input?: ListConversionsInput,
+  options?: KlydeRequestOptions,
+): Promise<KlydePaginatedResponse<KlydeConversion>> {
+  return withKlydeClient((client) => client.listConversions(input, options));
 }
 
 export async function getKlydeFundingInstructions(
@@ -364,6 +583,8 @@ async function withKlydeClient<T>(operation: (client: KlydeClient) => Promise<T>
       throw error;
     }
 
+    await clearLocalKlydeSessionState(client);
+
     try {
       const assertion = await requestKlydeHostAppAssertion();
       await client.auth.bootstrapHostAppSession({
@@ -380,6 +601,15 @@ async function withKlydeClient<T>(operation: (client: KlydeClient) => Promise<T>
       throw new Error(`Klyde session was restored, but the request still failed: ${readErrorMessage(retryError)}`);
     }
   }
+}
+
+async function clearLocalKlydeSessionState(client?: KlydeClient): Promise<void> {
+  await Promise.all([
+    SecureStore.deleteItemAsync(KLYDE_SESSION_TOKEN_KEY),
+    SecureStore.deleteItemAsync(KLYDE_REFRESH_TOKEN_KEY),
+  ]);
+
+  await client?.setSessionToken(undefined);
 }
 
 function assertRealKlydeIntegrationsEnabled(): void {

@@ -14,12 +14,14 @@ type FeatherName = ComponentProps<typeof Feather>['name'];
 export function SettingsRow({
   badge,
   icon,
+  iconText,
   isLast = false,
   onPress,
   title,
 }: {
   badge?: string;
-  icon: FeatherName;
+  icon?: FeatherName;
+  iconText?: string;
   isLast?: boolean;
   onPress?: () => void;
   title: string;
@@ -27,7 +29,11 @@ export function SettingsRow({
   return (
     <PressableScale onPress={onPress} style={[styles.row, !isLast && styles.rowBorder]}>
       <View style={styles.rowIcon}>
-        <Feather name={icon} size={18} color={Colors.light.primary} />
+        {iconText ? (
+          <Text style={styles.rowIconText}>{iconText}</Text>
+        ) : icon ? (
+          <Feather name={icon} size={18} color={Colors.light.primary} />
+        ) : null}
       </View>
       <Text style={styles.rowText}>{title}</Text>
       {badge ? (
@@ -130,10 +136,12 @@ export function PasswordField({
 export function LimitBlock({
   progress,
   remaining,
+  resetLabel = 'Refreshes daily',
   title,
 }: {
   progress: number;
   remaining: string;
+  resetLabel?: string;
   title: string;
 }) {
   return (
@@ -144,7 +152,7 @@ export function LimitBlock({
       </View>
       <View style={styles.limitMetaRow}>
         <Text style={styles.limitMeta}>{remaining}</Text>
-        <Text style={styles.limitMeta}>Refreshes in 14 hours</Text>
+        <Text style={styles.limitMeta}>{resetLabel}</Text>
       </View>
     </View>
   );

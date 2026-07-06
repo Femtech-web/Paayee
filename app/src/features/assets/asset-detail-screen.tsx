@@ -33,13 +33,17 @@ type AssetDetailScreenProps = {
 export function AssetDetailScreen({ assetCode }: AssetDetailScreenProps) {
   const router = useRouter();
   const asset = assetDetails[assetCode];
-  const { data, loading } = useAppData();
+  const { data, loading, refresh } = useAppData();
   const liveBalance = data?.balances.find(
     (balance) => balance.code.toLowerCase() === assetCode,
   );
+  const [balanceVisible, setBalanceVisible] = useState(false);
+  const [balanceRevealLoading, setBalanceRevealLoading] = useState(false);
+  const latestSeenActivityId = useRef<string | undefined>(undefined);
+  const latestActivityId = data?.transactions[0]?.id;
   const displayBalance = liveBalance?.displayAmount ?? asset.balance;
+  const privateBalanceDisplay = formatPrivateBalanceDisplay(displayBalance, balanceVisible);
   const displayName = liveBalance?.name ?? asset.balanceLabel;
-  const [balanceVisible, setBalanceVisible] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
 
   useEffect(() => {
@@ -51,6 +55,22 @@ export function AssetDetailScreen({ assetCode }: AssetDetailScreenProps) {
 
     return () => clearTimeout(timeout);
   }, [toastMessage]);
+
+  useEffect(() => {
+    if (!latestActivityId) {
+      return;
+    }
+
+    if (!latestSeenActivityId.current) {
+      latestSeenActivityId.current = latestActivityId;
+      return;
+    }
+
+    if (latestSeenActivityId.current !== latestActivityId) {
+      latestSeenActivityId.current = latestActivityId;
+      setBalanceVisible(false);
+    }
+  }, [latestActivityId]);
 
   return (
     <View style={styles.screen}>
@@ -78,13 +98,26 @@ export function AssetDetailScreen({ assetCode }: AssetDetailScreenProps) {
               </View>
               <Text style={styles.balanceLabel}>{displayName}</Text>
               <View style={styles.balanceRow}>
-                {loading ? (
+                {loading || (balanceRevealLoading && balanceVisible) ? (
                   <SkeletonBlock style={styles.balanceSkeleton} />
                 ) : (
-                  <Text style={styles.balance}>{balanceVisible ? displayBalance : '••••••'}</Text>
+                  <Text style={styles.balance}>{privateBalanceDisplay}</Text>
                 )}
                 <Pressable
-                  onPress={() => setBalanceVisible((isVisible) => !isVisible)}
+                  onPress={async () => {
+                    if (balanceVisible) {
+                      setBalanceVisible(false);
+                      return;
+                    }
+
+                    setBalanceVisible(true);
+                    setBalanceRevealLoading(true);
+                    try {
+                      await refresh({ silent: true });
+                    } finally {
+                      setBalanceRevealLoading(false);
+                    }
+                  }}
                   style={styles.visibilityButton}
                   accessibilityRole="button"
                   accessibilityLabel={balanceVisible ? 'Hide balance' : 'Show balance'}>
@@ -99,7 +132,7 @@ export function AssetDetailScreen({ assetCode }: AssetDetailScreenProps) {
                   <Text style={styles.actionText}>Send</Text>
                 </PressableScale>
                 <PressableScale
-                  onPress={() => router.push(`/add-money/conversion?asset=${asset.displayCode}` as Href)}
+                  onPress={() => router.push(createAssetConversionHref(asset.code))}
                   style={styles.actionPill}>
                   <Feather name="refresh-cw" size={20} color={Colors.light.black} />
                   <Text style={styles.actionText}>Convert</Text>
@@ -125,6 +158,22 @@ export function AssetDetailScreen({ assetCode }: AssetDetailScreenProps) {
       </SafeAreaView>
     </View>
   );
+}
+
+function formatPrivateBalanceDisplay(value: string, visible: boolean): string {
+  if (!visible) {
+    return '••••••';
+  }
+
+  if (!value.includes('••••')) {
+    return value;
+  }
+
+  return value.replace(/^[₦$]\s*/, '');
+}
+
+function createAssetConversionHref(assetCode: AssetCode): Href {
+  return `/add-money/conversion?asset=${assetDetails[assetCode].displayCode}` as Href;
 }
 
 function AssetIcon({ code, large = false }: { code: AssetCode; large?: boolean }) {
@@ -188,7 +237,7 @@ function StablecoinReceivePanel({
   const router = useRouter();
   const asset = assetDetails[assetCode];
   const assetDisplayCode = asset.displayCode as 'USDC' | 'USDT';
-  const openedAtRef = useRef(Date.now());
+  const [openedAt] = useState(() => Date.now());
   const routedDepositRef = useRef(false);
   const [fundingInstructions, setFundingInstructions] = useState<KlydeFundingInstructions>();
   const [addressError, setAddressError] = useState('');
@@ -264,7 +313,7 @@ function StablecoinReceivePanel({
             transaction.kind === 'deposit' &&
             transaction.amount.currency === assetDisplayCode &&
             Number.isFinite(createdAt) &&
-            createdAt >= openedAtRef.current - 5000
+            createdAt >= openedAt - 5000
           );
         });
 
@@ -296,7 +345,7 @@ function StablecoinReceivePanel({
       mounted = false;
       clearInterval(interval);
     };
-  }, [addressError, assetDisplayCode, router, walletFunding]);
+  }, [addressError, assetDisplayCode, openedAt, router, walletFunding]);
 
   return (
     <FadeInView delay={120} style={styles.receiveSection}>

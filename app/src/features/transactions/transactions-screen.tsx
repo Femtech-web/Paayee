@@ -76,9 +76,12 @@ export function TransactionsScreen() {
                 const receiptParam = transaction.receiptId
                   ? `&receiptId=${encodeURIComponent(transaction.receiptId)}`
                   : '';
+                const privateEnvelopeParam = transaction.privateEnvelopeId
+                  ? `&privateEnvelopeId=${encodeURIComponent(transaction.privateEnvelopeId)}`
+                  : '';
 
                 router.push(
-                  `/transaction/${encodeURIComponent(transaction.id)}?kind=${transaction.kind}${receiptParam}` as Href,
+                  `/transaction/${encodeURIComponent(transaction.id)}?kind=${transaction.kind}${receiptParam}${privateEnvelopeParam}` as Href,
                 );
               }}
               transaction={transaction}
