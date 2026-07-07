@@ -17,9 +17,9 @@ import { styles } from './home-screen.styles';
 const nigeriaFlag = require('../../../assets/images/nigeria.png');
 
 const quickActions = [
-  { label: 'Add money', icon: 'plus' },
-  { label: 'Send', icon: 'arrow-up-right' },
-  { label: 'Chat', icon: 'message-circle' },
+  { label: 'Add money', icon: 'plus', route: '/add-money' },
+  { label: 'Send', icon: 'arrow-up-right', route: '/send' },
+  { label: 'Chat', icon: 'message-circle', comingSoon: true },
 ] as const;
 const homeTransactionLimit = 3;
 
@@ -136,23 +136,35 @@ export function HomeScreen() {
             </FadeInView>
 
             <FadeInView delay={160} style={styles.quickActions}>
-              {quickActions.map((action) => (
-                <PressableScale
-                  key={action.label}
-                  onPress={
-                    action.label === 'Send'
-                      ? () => router.push('/send' as Href)
-                      : action.label === 'Add money'
-                        ? () => router.push('/add-money' as Href)
+              {quickActions.map((action) => {
+                const comingSoon = 'comingSoon' in action && action.comingSoon;
+
+                return (
+                  <PressableScale
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: comingSoon }}
+                    disabled={comingSoon}
+                    key={action.label}
+                    onPress={
+                      'route' in action
+                        ? () => router.push(action.route as Href)
                         : undefined
-                  }
-                  style={styles.actionItem}>
-                  <View style={styles.actionIcon}>
-                    <Feather name={action.icon} size={24} color={Colors.light.black} />
-                  </View>
-                  <Text style={styles.actionLabel}>{action.label}</Text>
-                </PressableScale>
-              ))}
+                    }
+                    style={[styles.actionItem, comingSoon && styles.actionItemDisabled]}>
+                    <View style={[styles.actionIcon, comingSoon && styles.actionIconDisabled]}>
+                      <Feather
+                        name={action.icon}
+                        size={24}
+                        color={comingSoon ? Colors.light.textTertiary : Colors.light.black}
+                      />
+                    </View>
+                    <Text style={[styles.actionLabel, comingSoon && styles.actionLabelDisabled]}>
+                      {action.label}
+                    </Text>
+                    {comingSoon ? <Text style={styles.actionComingSoon}>Coming soon</Text> : null}
+                  </PressableScale>
+                );
+              })}
             </FadeInView>
 
             <FadeInView delay={210} style={styles.sectionHeader}>

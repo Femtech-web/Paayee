@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~56.0.18",
-    "@klyde/core": "file:../../klyde/packages/core",
-    "@klyde/protocols": "file:../../klyde/packages/protocols",
-    "@klyde/sdk": "file:../../klyde/packages/sdk",
+    "@klyde/core": "npm:@femdev/klyde-core@^0.1.0",
+    "@klyde/protocols": "npm:@femdev/klyde-protocols@^0.1.0",
+    "@klyde/sdk": "npm:@femdev/klyde-sdk@^0.1.0",
     "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-native-vector-icons/feather": "^13.1.2",
     "@supabase/supabase-js": "^2.109.0",

@@ -212,6 +212,9 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  actionItemDisabled: {
+    opacity: 0.62,
+  },
   actionIcon: {
     width: 66,
     height: 66,
@@ -227,10 +230,24 @@ export const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
   },
+  actionIconDisabled: {
+    backgroundColor: Colors.light.backgroundElement,
+    shadowOpacity: 0,
+  },
   actionLabel: {
     color: Colors.light.black,
     fontFamily: Fonts.medium,
     fontSize: 13,
+    textAlign: 'center',
+  },
+  actionLabelDisabled: {
+    color: Colors.light.textSecondary,
+  },
+  actionComingSoon: {
+    marginTop: -6,
+    color: Colors.light.primary,
+    fontFamily: Fonts.medium,
+    fontSize: 10,
     textAlign: 'center',
   },
   sectionHeader: {

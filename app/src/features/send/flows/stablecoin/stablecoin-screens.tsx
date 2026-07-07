@@ -175,6 +175,7 @@ export function StablecoinWalletAmountScreen() {
         name: stablecoinNetworks[0].name,
         bankName: '',
         accountNumber: sampleWalletAddress,
+        walletAddress: sampleWalletAddress,
         initials: 'SC',
       }}
       reviewPath="/send/stablecoin/review"

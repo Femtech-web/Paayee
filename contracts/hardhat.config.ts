@@ -13,10 +13,13 @@ import "solidity-coverage";
 const MNEMONIC = vars.get("MNEMONIC", "test test test test test test test test test test test junk");
 const INFURA_API_KEY = vars.get("INFURA_API_KEY", "");
 const ETHERSCAN_API_KEY = vars.get("ETHERSCAN_API_KEY", "");
-const SEPOLIA_RPC_URL = vars.get(
-  "SEPOLIA_RPC_URL",
-  INFURA_API_KEY ? `https://sepolia.infura.io/v3/${INFURA_API_KEY}` : ""
-);
+const SEPOLIA_RPC_URL = vars.get("SEPOLIA_RPC_URL", INFURA_API_KEY ? `https://sepolia.infura.io/v3/${INFURA_API_KEY}` : "");
+const SEPOLIA_PRIVATE_KEY = process.env.SEPOLIA_PRIVATE_KEY?.trim();
+const SEPOLIA_ACCOUNT = SEPOLIA_PRIVATE_KEY
+  ? SEPOLIA_PRIVATE_KEY.startsWith("0x")
+    ? SEPOLIA_PRIVATE_KEY
+    : `0x${SEPOLIA_PRIVATE_KEY}`
+  : undefined;
 
 const config: HardhatUserConfig = {
   defaultNetwork: "hardhat",
@@ -57,9 +60,9 @@ const config: HardhatUserConfig = {
       url: "http://localhost:8545"
     },
     sepolia: {
-      accounts: process.env.SEPOLIA_PRIVATE_KEY ? [`0x${process.env.SEPOLIA_PRIVATE_KEY}`] : [],
+      accounts: SEPOLIA_ACCOUNT ? [SEPOLIA_ACCOUNT] : [],
       chainId: 11155111,
-      url: process.env.SEPOLIA_RPC_URL ?? SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
+      url: process.env.SEPOLIA_RPC_URL || SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com"
     }
   },
   paths: {

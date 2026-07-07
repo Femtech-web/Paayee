@@ -110,5 +110,5 @@ export function createStablecoinAmountHref({
 }) {
   return `/send/stablecoin/amount?name=${encodeURIComponent(network.name)}&bank=&account=${encodeURIComponent(
     address,
-  )}&initials=SC&asset=${asset}&networkId=${network.id}` as Href;
+  )}&wallet=${encodeURIComponent(address)}&initials=SC&asset=${asset}&networkId=${network.id}` as Href;
 }
