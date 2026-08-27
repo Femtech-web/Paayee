@@ -1,0 +1,36 @@
+type StablecoinTransfer @entity(immutable: true) {
+  id: ID!
+  token: Bytes!
+  tokenSymbol: String!
+  from: Bytes!
+  to: Bytes!
+  value: BigInt!
+  transactionHash: Bytes!
+  logIndex: BigInt!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+}
+
+type StablecoinFundingAccount @entity(immutable: false) {
+  id: ID!
+  address: Bytes!
+  transferCount: BigInt!
+  totalReceivedUSDC: BigInt!
+  totalReceivedUSDT: BigInt!
+  lastTransferHash: Bytes
+  lastTransferAt: BigInt
+  lastBlockNumber: BigInt
+}
+
+type ConfidentialStablecoinTransfer @entity(immutable: true) {
+  id: ID!
+  token: Bytes!
+  tokenSymbol: String!
+  from: Bytes!
+  to: Bytes!
+  encryptedAmountHandle: Bytes!
+  transactionHash: Bytes!
+  logIndex: BigInt!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+}

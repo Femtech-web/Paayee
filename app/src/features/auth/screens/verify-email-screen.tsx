@@ -1,177 +1,87 @@
+import { useLoginWithEmail } from '@privy-io/expo';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
 import { FeedbackToast } from '@/components/feedback-toast';
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { PressableScale } from '@/components/motion/pressable-scale';
-import { runtimeConfig } from '@/config/runtime';
-import {
-  clearKlydeSession,
-  linkKlydeAccountToCurrentProfile,
-  startKlydeEmailVerification,
-  verifyKlydeEmail,
-} from '@/integrations/klyde';
-import { signOutFromSupabase } from '@/integrations/supabase';
 
-import {
-  clearAuthProgress,
-  getAuthProgress,
-  getAuthProgressHref,
-  setAuthProgress,
-  type AuthProgress,
-} from '../auth-progress';
-import { formatAuthError } from '../auth-errors';
+import { clearAuthProgress, getAuthProgress, setAuthProgress } from '../auth-progress';
 import { authStyles as styles } from '../auth-screen.styles';
+import { completePrivySignIn } from '../session';
 import { AuthShell } from './auth-shell';
 
 export function VerifyEmailScreen() {
   const router = useRouter();
-  const { challengeId, email } = useLocalSearchParams<{
-    challengeId?: string;
-    email?: string;
-  }>();
+  const { email } = useLocalSearchParams<{ email?: string }>();
   const [code, setCode] = useState('');
+  const [savedEmail, setSavedEmail] = useState('');
+  const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [resendMessage, setResendMessage] = useState('');
-  const [savedProgress, setSavedProgress] = useState<AuthProgress | undefined>();
-  const [submitting, setSubmitting] = useState(false);
-  const [resending, setResending] = useState(false);
+  const [pending, setPending] = useState<'verify' | 'resend'>();
+  const { loginWithCode, sendCode } = useLoginWithEmail();
   const routeEmail = email ? decodeURIComponent(email).trim().toLowerCase() : '';
-  const routeChallengeId = challengeId ? decodeURIComponent(challengeId) : '';
-  const normalizedEmail = routeEmail || savedProgress?.email || '';
-  const normalizedChallengeId = routeChallengeId || savedProgress?.challengeId || '';
-  const visibleEmail = normalizedEmail || 'your email';
-  const canVerify = !runtimeConfig.realIntegrationsEnabled || code.length === 6;
+  const normalizedEmail = routeEmail || savedEmail;
 
   useEffect(() => {
-    let mounted = true;
-
-    getAuthProgress().then((progress) => {
-      if (mounted) {
-        setSavedProgress(progress);
-      }
-    });
-
-    return () => {
-      mounted = false;
-    };
+    getAuthProgress().then((progress) => setSavedEmail(progress?.email ?? ''));
   }, []);
 
-  const canResend = useMemo(
-    () => runtimeConfig.realIntegrationsEnabled && Boolean(normalizedEmail) && !resending,
-    [normalizedEmail, resending],
-  );
-
-  useEffect(() => {
-    if (!errorMessage) {
-      return;
-    }
-
-    const timeout = setTimeout(() => setErrorMessage(''), 5000);
-
-    return () => clearTimeout(timeout);
-  }, [errorMessage]);
-
-  useEffect(() => {
-    if (!resendMessage) {
-      return;
-    }
-
-    const timeout = setTimeout(() => setResendMessage(''), 3500);
-
-    return () => clearTimeout(timeout);
-  }, [resendMessage]);
-
-  const continueFlow = async () => {
-    if (!canVerify || submitting) {
-      return;
-    }
-
-    setSubmitting(true);
+  async function verify() {
+    if (code.length !== 6 || !normalizedEmail || pending) return;
+    setPending('verify');
     setErrorMessage('');
-    setResendMessage('');
 
     try {
-      if (runtimeConfig.realIntegrationsEnabled) {
-        if (!normalizedEmail || !normalizedChallengeId) {
-          throw new Error('Start email verification again to continue.');
-        }
-
-        const result = await verifyKlydeEmail({
-          challengeId: normalizedChallengeId,
-          code,
-          email: normalizedEmail,
-        });
-
-        await linkKlydeAccountToCurrentProfile({
-          authResult: result,
-          email: normalizedEmail,
-        });
-      }
-
-      await setAuthProgress({ email: normalizedEmail, step: 'handle' });
-      router.replace('/setup/handle' as Href);
+      const user = await loginWithCode({ code, email: normalizedEmail });
+      if (user) router.replace(await completePrivySignIn(user));
     } catch (error) {
-      setErrorMessage(formatAuthError(error, 'verify'));
+      setErrorMessage(codeMessage(error));
     } finally {
-      setSubmitting(false);
+      setPending(undefined);
     }
-  };
+  }
 
-  const resendCode = async () => {
-    if (!canResend) {
-      return;
-    }
-
-    setResending(true);
-    setErrorMessage('');
-    setResendMessage('');
+  async function resend() {
+    if (!normalizedEmail || pending) return;
+    setPending('resend');
     setCode('');
-
-    try {
-      const challenge = await startKlydeEmailVerification({ email: normalizedEmail });
-      const progress = await setAuthProgress({
-        challengeId: challenge.challengeId,
-        email: normalizedEmail,
-        step: 'verify-email',
-      });
-
-      setSavedProgress(progress);
-      setResendMessage('We sent a new code.');
-      router.replace(getAuthProgressHref(progress));
-    } catch (error) {
-      setErrorMessage(formatAuthError(error, 'verify'));
-    } finally {
-      setResending(false);
-    }
-  };
-
-  const useAnotherEmail = async () => {
+    setMessage('');
     setErrorMessage('');
-    setResendMessage('');
 
     try {
-      await Promise.all([clearAuthProgress(), clearKlydeSession(), signOutFromSupabase()]);
+      await sendCode({ email: normalizedEmail });
+      await setAuthProgress({ email: normalizedEmail, step: 'verify-email' });
+      setMessage('A new code is on its way.');
+    } catch (error) {
+      setErrorMessage(codeMessage(error));
     } finally {
-      router.replace('/auth/signup?fresh=1' as Href);
+      setPending(undefined);
     }
-  };
+  }
+
+  async function useAnotherEmail() {
+    await clearAuthProgress();
+    router.replace('/auth/login?fresh=1' as Href);
+  }
+
+  const canVerify = code.length === 6 && Boolean(normalizedEmail) && !pending;
 
   return (
     <AuthShell showBack onBack={useAnotherEmail}>
       <FadeInView delay={50} style={styles.hero}>
         <View style={styles.copy}>
-          <Text style={styles.detailTitle}>Verify your email</Text>
+          <Text style={styles.detailTitle}>Check your email</Text>
           <Text style={styles.subtitle}>
-            We sent a verification code to {visibleEmail}. Enter the code to continue setting up
-            your account.
+            Enter the 6-digit security code sent to {normalizedEmail || 'your email'}.
           </Text>
         </View>
+
         <FeedbackToast message={errorMessage} tone="error" />
         <View style={styles.emailPill}>
           <Text numberOfLines={1} style={styles.emailPillText}>
-            {visibleEmail}
+            {normalizedEmail || 'your email'}
           </Text>
         </View>
         <View style={styles.verificationBoxes}>
@@ -189,28 +99,38 @@ export function VerifyEmailScreen() {
             setCode(value.replace(/\D/g, '').slice(0, 6));
             setErrorMessage('');
           }}
+          onSubmitEditing={verify}
           style={styles.hiddenInput}
           textContentType="oneTimeCode"
           value={code}
         />
-        <FeedbackToast message={resendMessage} tone="success" />
+        <FeedbackToast message={message} tone="success" />
       </FadeInView>
 
       <View style={styles.footer}>
         <PressableScale
           accessibilityRole="button"
-          accessibilityLabel="Verify email"
-          onPress={canVerify && !submitting ? continueFlow : undefined}
-          style={[styles.primaryButton, (!canVerify || submitting) && styles.primaryButtonDisabled]}>
-          <Text style={styles.primaryButtonText}>{submitting ? 'Verifying...' : 'Verify email'}</Text>
+          accessibilityLabel="Continue"
+          onPress={canVerify ? verify : undefined}
+          style={[styles.primaryButton, !canVerify && styles.primaryButtonDisabled]}>
+          <Text style={styles.primaryButtonText}>
+            {pending === 'verify' ? 'Signing you in…' : 'Continue'}
+          </Text>
         </PressableScale>
         <Text style={styles.inlineText}>
-          Did not get it?{' '}
-          <Text onPress={canResend ? resendCode : undefined} style={styles.inlineAction}>
-            {resending ? 'Sending...' : 'Resend code'}
+          Didn’t get it?{' '}
+          <Text onPress={!pending ? resend : undefined} style={styles.inlineAction}>
+            {pending === 'resend' ? 'Sending…' : 'Send another code'}
           </Text>
         </Text>
       </View>
     </AuthShell>
   );
+}
+
+function codeMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (message.includes('expired')) return 'That code expired. Send a new one and try again.';
+  if (message.includes('invalid') || message.includes('code')) return 'That code is not correct. Try again.';
+  return 'We could not complete sign-in. Please try again.';
 }

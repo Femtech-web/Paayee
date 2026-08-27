@@ -26,26 +26,42 @@ export function splitAddress(address: string) {
 }
 
 export function MethodRow({
+  badge,
+  disabled = false,
   icon,
   onPress,
   text,
   title,
 }: {
+  badge?: string;
+  disabled?: boolean;
   icon: FeatherName;
   onPress: () => void;
   text: string;
   title: string;
 }) {
   return (
-    <PressableScale onPress={onPress} style={styles.methodRow}>
-      <View style={styles.methodIcon}>
-        <Feather name={icon} size={24} color={Colors.light.primary} />
+    <PressableScale
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.methodRow, disabled && styles.methodRowDisabled]}>
+      <View style={[styles.methodIcon, disabled && styles.methodIconDisabled]}>
+        <Feather name={icon} size={24} color={disabled ? '#A4A8B0' : Colors.light.primary} />
       </View>
       <View style={styles.methodCopy}>
-        <Text style={styles.methodTitle}>{title}</Text>
+        <View style={styles.methodTitleRow}>
+          <Text style={[styles.methodTitle, disabled && styles.methodTitleDisabled]}>{title}</Text>
+          {badge ? (
+            <View style={styles.methodBadge}>
+              <Text style={styles.methodBadgeText}>{badge}</Text>
+            </View>
+          ) : null}
+        </View>
         <Text style={styles.methodText}>{text}</Text>
       </View>
-      <Feather name="chevron-right" size={22} color="#303747" />
+      {!disabled ? <Feather name="chevron-right" size={22} color="#303747" /> : null}
     </PressableScale>
   );
 }

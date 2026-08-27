@@ -1,0 +1,82 @@
+specVersion: 1.0.0
+schema:
+  file: ./schema.graphql
+indexerHints:
+  prune: auto
+dataSources:
+  - kind: ethereum
+    name: PaayeeUSDC
+    network: __NETWORK__
+    source:
+      address: "__USDC_ADDRESS__"
+      abi: ERC20
+      startBlock: __USDC_START_BLOCK__
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities: [StablecoinTransfer, StablecoinFundingAccount]
+      abis:
+        - name: ERC20
+          file: ./abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleUSDCTransfer
+      file: ./src/stablecoin.ts
+  - kind: ethereum
+    name: PaayeeUSDT
+    network: __NETWORK__
+    source:
+      address: "__USDT_ADDRESS__"
+      abi: ERC20
+      startBlock: __USDT_START_BLOCK__
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities: [StablecoinTransfer, StablecoinFundingAccount]
+      abis:
+        - name: ERC20
+          file: ./abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleUSDTTransfer
+      file: ./src/stablecoin.ts
+  - kind: ethereum
+    name: PaayeeConfidentialUSDC
+    network: __NETWORK__
+    source:
+      address: "__CUSDC_ADDRESS__"
+      abi: ERC7984
+      startBlock: __CUSDC_START_BLOCK__
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities: [ConfidentialStablecoinTransfer]
+      abis:
+        - name: ERC7984
+          file: ./abis/ERC7984.json
+      eventHandlers:
+        - event: ConfidentialTransfer(indexed address,indexed address,indexed bytes32)
+          handler: handleConfidentialUSDCTransfer
+      file: ./src/confidential-stablecoin.ts
+  - kind: ethereum
+    name: PaayeeConfidentialUSDT
+    network: __NETWORK__
+    source:
+      address: "__CUSDT_ADDRESS__"
+      abi: ERC7984
+      startBlock: __CUSDT_START_BLOCK__
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities: [ConfidentialStablecoinTransfer]
+      abis:
+        - name: ERC7984
+          file: ./abis/ERC7984.json
+      eventHandlers:
+        - event: ConfidentialTransfer(indexed address,indexed address,indexed bytes32)
+          handler: handleConfidentialUSDTTransfer
+      file: ./src/confidential-stablecoin.ts

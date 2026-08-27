@@ -12,34 +12,8 @@ import { storePinVerifier, verifyPin } from '@/features/auth/pin-security';
 import { setBiometricsEnabled, setPinEnabled } from '@/integrations/supabase';
 
 import { BackBar, ProfileShell } from '../components/profile-shell';
-import { Key, PasswordField } from '../components/profile-ui';
+import { Key } from '../components/profile-ui';
 import { profileStyles as styles } from '../profile-screen.styles';
-
-export function ChangePasswordScreen() {
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-
-  return (
-    <ProfileShell detail>
-      <BackBar />
-      <FadeInView delay={60} style={styles.hero}>
-        <Text style={styles.detailTitle}>Change password</Text>
-        <Text style={styles.subtitle}>Choose a new password for your Paayee account.</Text>
-      </FadeInView>
-      <FadeInView delay={110} style={{ gap: 20 }}>
-        <PasswordField label="Current password" value={currentPassword} onChangeText={setCurrentPassword} />
-        <PasswordField label="New password" value={newPassword} onChangeText={setNewPassword} />
-      </FadeInView>
-      <PressableScale
-        style={[
-          styles.primaryButton,
-          (!currentPassword || !newPassword) && styles.primaryButtonDisabled,
-        ]}>
-        <Text style={styles.primaryButtonText}>Change password</Text>
-      </PressableScale>
-    </ProfileShell>
-  );
-}
 
 export function BiometricUnlockScreen() {
   const [available, setAvailable] = useState<boolean | null>(null);

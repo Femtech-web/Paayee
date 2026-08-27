@@ -3,9 +3,9 @@ import { Text, View } from 'react-native';
 
 import { FadeInView } from '@/components/motion/fade-in-view';
 import {
-  getKlydeRates,
   type KlydeRates,
 } from '@/integrations/klyde/client';
+import { getPaayeeRates } from '@/integrations/paayee';
 
 import { BackBar, ProfileShell } from '../components/profile-shell';
 import { profileStyles as styles } from '../profile-screen.styles';
@@ -18,7 +18,7 @@ export function RatesScreen() {
   useEffect(() => {
     let mounted = true;
 
-    getKlydeRates({ baseCurrency: 'NGN', currencies: ['USD', 'USDC', 'USDT'] })
+    getPaayeeRates('NGN')
       .then((rateSet) => {
         if (mounted) {
           setRates(rateSet);
@@ -47,14 +47,14 @@ export function RatesScreen() {
       <BackBar />
       <FadeInView delay={60} style={styles.hero}>
         <Text style={styles.detailTitle}>Our rates</Text>
-        <Text style={styles.subtitle}>Indicative live rates from Klyde. Conversion screens still use a fresh quote before you continue.</Text>
+        <Text style={styles.subtitle}>Indicative live rates from Paayee. Conversion screens request a fresh quote before you continue.</Text>
       </FadeInView>
       <FadeInView delay={110} style={styles.ratesGrid}>
         {loading ? (
           <View style={styles.rateRow}>
             <View style={styles.rateCol}>
               <Text style={styles.ratePair}>Loading live rates</Text>
-              <Text style={styles.rateValue}>Fetching current Klyde valuation data.</Text>
+              <Text style={styles.rateValue}>Fetching current Paayee valuation data.</Text>
             </View>
           </View>
         ) : null}
@@ -94,11 +94,11 @@ export function RatesScreen() {
   );
 }
 
-function createRateRows(rateSet?: KlydeRates): Array<{
+function createRateRows(rateSet?: KlydeRates): {
   currency: string;
   forward: string;
   reverse: string;
-}> {
+}[] {
   if (!rateSet || rateSet.baseCurrency.toUpperCase() !== 'NGN') {
     return [];
   }

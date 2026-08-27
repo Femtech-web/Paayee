@@ -29,7 +29,7 @@ export function AccountVerificationScreen() {
   const addressValue = address ?? profile?.residentialAddress ?? '';
   const countryValue = country ?? profile?.countryOfResidence ?? 'Nigeria';
   const dateOfBirthValue = formatDateOfBirthInput(dateOfBirth ?? profile?.dateOfBirth ?? '');
-  const firstNameValue = firstName ?? (profile?.firstName === 'there' ? '' : profile?.firstName) ?? '';
+  const firstNameValue = firstName ?? profile?.firstName ?? '';
   const lastNameValue = lastName ?? profile?.lastName ?? '';
   const phoneValue = phone ?? profile?.phoneNumber ?? '';
   const identityComplete =

@@ -1,11 +1,10 @@
 import { runtimeConfig } from '@/config/runtime';
 import {
   executeKlydeConversion,
-  quoteKlydeConversion,
   type KlydeConversion,
   type KlydeQuote,
-  type MoneyAmount,
 } from '@/integrations/klyde';
+import { quotePaayeeConversion } from '@/integrations/paayee';
 import type { SendAssetCode } from '@/features/send/send-data';
 import {
   isStablecoinAsset,
@@ -23,12 +22,6 @@ type ExecuteLivePrivateConversionInput = CreateLiveConversionInput & {
   chainId: number;
   rateLabel?: string;
   targetAmount: number;
-};
-
-const moneyScaleByAsset: Record<SendAssetCode, number> = {
-  NGN: 2,
-  USDC: 6,
-  USDT: 6,
 };
 
 export async function createLiveConversion(
@@ -50,13 +43,9 @@ export async function quoteLiveConversion(
     return undefined;
   }
 
-  if (usesPrivateStablecoin(input)) {
-    return createPrivateConversionQuote(input);
-  }
-
-  return quoteKlydeConversion({
-    amount: toKlydeMoneyAmount(input.amount, input.sourceAssetCode),
-    market: 'NG',
+  return quotePaayeeConversion({
+    amount: input.amount,
+    sourceCurrency: input.sourceAssetCode,
     targetCurrency: input.targetAssetCode,
   });
 }
@@ -72,8 +61,8 @@ export async function executeLiveConversionQuote(
     throw new Error('Klyde returned a conversion quote without an id.');
   }
 
-  if (quoteId.startsWith(privateConversionQuotePrefix)) {
-    throw new Error('This private conversion must execute through Paayee confidential settlement rails.');
+  if (quoteId.startsWith('paayee_quote_')) {
+    throw new Error('Paayee conversion settlement is not enabled yet. The displayed rate and fee are indicative only.');
   }
 
   return executeKlydeConversion(
@@ -132,18 +121,6 @@ export async function prepareLivePrivateConversionSettlement(
   });
 }
 
-function toKlydeMoneyAmount(amount: number, assetCode: SendAssetCode): MoneyAmount {
-  const scale = moneyScaleByAsset[assetCode];
-  const multiplier = 10 ** scale;
-
-  return {
-    currency: assetCode,
-    display: String(amount),
-    minorUnits: String(Math.round(amount * multiplier)),
-    scale,
-  };
-}
-
 export function isPrivateStablecoinConversion(input: Pick<CreateLiveConversionInput, 'sourceAssetCode' | 'targetAssetCode'>): boolean {
   return (
     isStablecoinAsset(input.sourceAssetCode) &&
@@ -167,53 +144,3 @@ export function isNgnToPrivateStablecoinConversion(
 function usesPrivateStablecoin(input: Pick<CreateLiveConversionInput, 'sourceAssetCode' | 'targetAssetCode'>): boolean {
   return isStablecoinAsset(input.sourceAssetCode) || isStablecoinAsset(input.targetAssetCode);
 }
-
-function createPrivateConversionQuote(input: CreateLiveConversionInput): KlydeQuote {
-  const createdAt = new Date();
-  const settlementAmount = estimatePrivateConversionTargetAmount(input);
-
-  return {
-    id: `${privateConversionQuotePrefix}${createdAt.getTime()}`,
-    appId: 'app_paayee_private',
-    kind: 'swap',
-    market: 'NG',
-    providerReference: 'paayee-confidential-local-estimate',
-    rateReference: readPrivateStablecoinRateReference(input),
-    sourceAmount: toKlydeMoneyAmount(input.amount, input.sourceAssetCode),
-    settlementAmount: toKlydeMoneyAmount(settlementAmount, input.targetAssetCode),
-    status: 'active',
-    expiresAt: new Date(createdAt.getTime() + 60_000).toISOString(),
-    createdAt: createdAt.toISOString(),
-  };
-}
-
-function estimatePrivateConversionTargetAmount(input: CreateLiveConversionInput): number {
-  if (input.sourceAssetCode === 'NGN' && isStablecoinAsset(input.targetAssetCode)) {
-    return input.amount / 1485;
-  }
-
-  if (isStablecoinAsset(input.sourceAssetCode) && input.targetAssetCode === 'NGN') {
-    return input.amount * 1485;
-  }
-
-  if (input.sourceAssetCode === 'USDC' && input.targetAssetCode === 'USDT') {
-    return input.amount * 0.998;
-  }
-
-  if (input.sourceAssetCode === 'USDT' && input.targetAssetCode === 'USDC') {
-    return input.amount * 0.997;
-  }
-
-  return input.amount;
-}
-
-function readPrivateStablecoinRateReference(input: CreateLiveConversionInput): string {
-  const rate = estimatePrivateConversionTargetAmount({
-    ...input,
-    amount: 1,
-  });
-
-  return `private-estimate:1-${input.sourceAssetCode}-${rate}-${input.targetAssetCode}`;
-}
-
-const privateConversionQuotePrefix = 'paayee_private_conversion_quote_';

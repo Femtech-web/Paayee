@@ -153,6 +153,21 @@ export const styles = StyleSheet.create({
     lineHeight: 21,
     textAlign: 'right',
   },
+  detailValueAction: {
+    flex: 1.1,
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 7,
+  },
+  detailValueActionText: {
+    color: Colors.light.black,
+    fontFamily: Fonts.demi,
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'right',
+  },
   statusPill: {
     minHeight: 32,
     borderRadius: 16,

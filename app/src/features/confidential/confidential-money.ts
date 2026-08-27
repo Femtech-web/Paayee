@@ -3,23 +3,22 @@ import * as SecureStore from 'expo-secure-store';
 
 import { runtimeConfig } from '@/config/runtime';
 import {
-  completeKlydeConfidentialOperation,
-  completeKlydeConfidentialSettlement,
-  getKlydeAccountSnapshot,
-  getKlydeConfidentialBalance,
-  getKlydeConfidentialBalanceHandle,
-  markKlydeConfidentialOperationSubmitted,
-  prepareKlydeConfidentialOperation,
-  resolveKlydeConfidentialAsset,
-  type KlydeConfidentialAmountReference,
-  type KlydeConfidentialOperation,
-} from '@/integrations/klyde';
+  completePaayeeConfidentialOperation,
+  completePaayeeConfidentialSettlement,
+  getPaayeeWalletAccount,
+  markPaayeeConfidentialOperationSubmitted,
+  preparePaayeeConfidentialOperation,
+  resolvePaayeeConfidentialAsset,
+  type PaayeeConfidentialAmountReference,
+  type PaayeeConfidentialOperation,
+} from '@/integrations/paayee';
 import type { SendAssetCode } from '@/features/send/send-data';
 
 import {
   executePaayeeConfidentialConversion,
   executePaayeeConfidentialTransfer,
   getPaayeeZamaConfidentialBalance,
+  getPaayeeZamaConfidentialBalances,
   getPaayeeZamaConfidentialBalanceHandle,
 } from './zama-mobile-runtime';
 import {
@@ -53,6 +52,7 @@ export type PaayeePrivateOperationEnvelope = {
   id: string;
   operationId: string;
   operationType?: 'send' | 'conversion';
+  ownerAddress?: string;
   purpose?: string;
   recipientHandle?: string;
   recipientName?: string;
@@ -86,9 +86,9 @@ type PaayeePrivateReceiptPayload = Pick<
 export type PaayeePrivateSendResult = {
   envelope: PaayeePrivateOperationEnvelope;
   kind: 'app_managed_confidential_operation';
-  operation: KlydeConfidentialOperation;
+  operation: PaayeeConfidentialOperation;
   receiptId?: undefined;
-  status: KlydeConfidentialOperation['status'];
+  status: PaayeeConfidentialOperation['status'];
 };
 
 export type PaayeePrivateConversionInput = {
@@ -103,8 +103,8 @@ export type PaayeePrivateConversionInput = {
 export type PaayeePrivateConversionResult = {
   envelope: PaayeePrivateOperationEnvelope;
   kind: 'app_managed_confidential_operation';
-  operation: KlydeConfidentialOperation;
-  status: KlydeConfidentialOperation['status'];
+  operation: PaayeeConfidentialOperation;
+  status: PaayeeConfidentialOperation['status'];
 };
 
 export type PaayeeConfidentialBalanceDisplay = {
@@ -126,9 +126,6 @@ const moneyScale: Record<SendAssetCode, number> = {
   USDT: 6,
 };
 
-/** Klyde's own USDC/USDT + cUSDC/cUSDT pair — funding, subgraph, auto-shield, balance, conversion. */
-const KLYDE_ACTIVE_CONFIDENTIAL_MODE = 'klyde_managed' as const;
-
 export function isStablecoinAsset(code: SendAssetCode): code is StablecoinAssetCode {
   return code === 'USDC' || code === 'USDT';
 }
@@ -136,7 +133,7 @@ export function isStablecoinAsset(code: SendAssetCode): code is StablecoinAssetC
 export async function preparePaayeePrivateStablecoinSend(
   input: PaayeePrivateSendInput,
 ): Promise<PaayeePrivateSendResult> {
-  const { user, wallet } = await getKlydeAccountSnapshot();
+  const { user, wallet } = await getPaayeeWalletAccount();
   const sourceAddress = wallet.address;
   const envelopeId = createEnvelopeId();
   const commitmentNonce = createLocalNonce();
@@ -165,21 +162,20 @@ export async function preparePaayeePrivateStablecoinSend(
     ownerAddress: sourceAddress,
     purpose: 'private_send_receipt',
   });
-  const amountReference: KlydeConfidentialAmountReference = {
+  const amountReference: PaayeeConfidentialAmountReference = {
     amountCommitment,
     metadataEnvelope: encryptedMetadataEnvelope,
     metadataEnvelopeId: envelopeId,
     operationPublicLabel: `${input.assetCode} private transfer`,
   };
 
-  let operation = await prepareKlydeConfidentialOperation(
+  let operation = await preparePaayeeConfidentialOperation(
     {
       userId: user.id,
       chainId: input.chainId,
       underlyingSymbol: input.assetCode,
       kind: 'confidential_transfer',
-      mode: KLYDE_ACTIVE_CONFIDENTIAL_MODE,
-      amount: toKlydeMoneyAmount(input.amount, input.assetCode, amountMinorUnits),
+      amount: toPaayeeMoneyAmount(input.amount, input.assetCode, amountMinorUnits),
       amountReference,
       fromAddress: sourceAddress,
       toAddress: input.recipient.walletAddress,
@@ -202,6 +198,11 @@ export async function preparePaayeePrivateStablecoinSend(
     id: envelopeId,
     operationId: operation.id,
     operationType: 'send',
+    ownerAddress: sourceAddress,
+    recipientHandle: input.recipient.handle,
+    recipientName: input.recipient.name,
+    recipientWalletAddress: input.recipient.walletAddress,
+    sendMethod: input.sendMethod,
     status: operation.status,
   };
 
@@ -224,8 +225,13 @@ export async function preparePaayeePrivateStablecoinSend(
         userOperationHash: execution.userOperationHash,
       };
       await savePrivateOperationEnvelope(envelope);
+      clearPaayeeConfidentialBalanceCache({
+        assetCode: input.assetCode,
+        chainId: input.chainId,
+        owner: sourceAddress,
+      });
     } catch (error) {
-      operation = await completeKlydeConfidentialOperation({
+      operation = await completePaayeeConfidentialOperation({
         operationId: operation.id,
         status: 'failed',
         failureReason: error instanceof Error ? error.message : 'Paayee Zama mobile execution failed.',
@@ -266,7 +272,7 @@ export async function preparePaayeePrivateStablecoinConversion(
     throw new Error('This private conversion pair is not supported yet.');
   }
 
-  const { user, wallet } = await getKlydeAccountSnapshot();
+  const { user, wallet } = await getPaayeeWalletAccount();
   const ownerAddress = wallet.address;
   const envelopeId = createEnvelopeId();
   const sourceAmountMinorUnits = toMoneyMinorUnits(input.sourceAmount, input.sourceAssetCode);
@@ -310,7 +316,7 @@ export async function preparePaayeePrivateStablecoinConversion(
     sourceAssetCode: input.sourceAssetCode,
     targetAssetCode: input.targetAssetCode,
   });
-  const amountReference: KlydeConfidentialAmountReference = {
+  const amountReference: PaayeeConfidentialAmountReference = {
     amountCommitment,
     metadataEnvelope: encryptedMetadataEnvelope,
     metadataEnvelopeId: envelopeId,
@@ -320,16 +326,15 @@ export async function preparePaayeePrivateStablecoinConversion(
   const conversionFlow = privateConversionFlow(input.sourceAssetCode, input.targetAssetCode);
   const privateSettlementAddress =
     conversionFlow === 'private_stablecoin_to_ngn_settlement'
-      ? getKlydePrivateSettlementAddress(input.chainId)
+      ? getPaayeePrivateSettlementAddress(input.chainId)
       : undefined;
 
-  let operation = await prepareKlydeConfidentialOperation(
+  let operation = await preparePaayeeConfidentialOperation(
     {
       userId: user.id,
       chainId: input.chainId,
       underlyingSymbol: confidentialAssetCode,
       kind: 'confidential_transfer',
-      mode: KLYDE_ACTIVE_CONFIDENTIAL_MODE,
       amount: resolvePrivateConversionOperationAmount({
         sourceAmount: input.sourceAmount,
         sourceAmountMinorUnits,
@@ -342,7 +347,7 @@ export async function preparePaayeePrivateStablecoinConversion(
       fromAddress: ownerAddress,
       toAddress: privateSettlementAddress ?? ownerAddress,
       metadata: {
-        activeRail: KLYDE_ACTIVE_CONFIDENTIAL_MODE,
+        activeRail: 'app_managed',
         conversionExecution: stablecoinToStablecoin
           ? 'paayee_confidential_conversion_executor'
           : 'paayee_confidential_settlement_executor',
@@ -375,6 +380,7 @@ export async function preparePaayeePrivateStablecoinConversion(
     id: envelopeId,
     operationId: operation.id,
     operationType: 'conversion',
+    ownerAddress,
     status: operation.status,
   };
 
@@ -406,7 +412,7 @@ export async function preparePaayeePrivateStablecoinConversion(
       };
       await savePrivateOperationEnvelope(envelope);
     } catch (error) {
-      operation = await completeKlydeConfidentialOperation({
+      operation = await completePaayeeConfidentialOperation({
         operationId: operation.id,
         status: 'failed',
         failureReason: error instanceof Error ? error.message : 'Paayee private stablecoin to NGN settlement failed.',
@@ -426,7 +432,7 @@ export async function preparePaayeePrivateStablecoinConversion(
 
   if (!stablecoinToStablecoin) {
     if (ngnToStablecoin) {
-      operation = await completeKlydeConfidentialSettlement({
+      operation = await completePaayeeConfidentialSettlement({
         operationId: operation.id,
         direction: 'ngn_to_private_stablecoin',
         sourceAmount: {
@@ -444,7 +450,7 @@ export async function preparePaayeePrivateStablecoinConversion(
         metadata: {
           chainId: input.chainId,
           paayeePrivacyFlow: conversionFlow,
-          paayeeZamaRuntime: 'klyde_treasury_private_credit',
+          paayeeZamaRuntime: 'paayee_treasury_private_credit',
           targetUnderlyingSymbol: input.targetAssetCode,
         },
       }).then((settlement) => settlement.operation);
@@ -489,7 +495,7 @@ export async function preparePaayeePrivateStablecoinConversion(
       };
       await savePrivateOperationEnvelope(envelope);
     } catch (error) {
-      operation = await completeKlydeConfidentialOperation({
+      operation = await completePaayeeConfidentialOperation({
         operationId: operation.id,
         status: 'failed',
         failureReason: error instanceof Error ? error.message : 'Paayee confidential conversion execution failed.',
@@ -517,6 +523,7 @@ export async function preparePaayeePrivateStablecoinConversion(
 
 export async function getPaayeePrivateOperationEnvelope(
   envelopeId: string | undefined,
+  ownerAddress?: string,
 ): Promise<PaayeePrivateOperationEnvelope | undefined> {
   if (!envelopeId) {
     return undefined;
@@ -528,7 +535,11 @@ export async function getPaayeePrivateOperationEnvelope(
   }
 
   try {
-    return hydratePrivateOperationEnvelope(JSON.parse(value) as PaayeePrivateOperationEnvelope);
+    const envelope = JSON.parse(value) as PaayeePrivateOperationEnvelope;
+    if (ownerAddress && !privateEnvelopeBelongsToOwner(envelope, ownerAddress)) {
+      return undefined;
+    }
+    return hydratePrivateOperationEnvelope(envelope);
   } catch {
     return undefined;
   }
@@ -536,6 +547,7 @@ export async function getPaayeePrivateOperationEnvelope(
 
 export async function listPaayeePrivateOperationEnvelopes(input: {
   hydrate?: boolean;
+  ownerAddress?: string;
 } = {}): Promise<PaayeePrivateOperationEnvelope[]> {
   const envelopeIds = await readPrivateOperationEnvelopeIndex();
   const envelopes = await Promise.all(
@@ -549,6 +561,10 @@ export async function listPaayeePrivateOperationEnvelopes(input: {
       try {
         const envelope = JSON.parse(value) as PaayeePrivateOperationEnvelope;
 
+        if (input.ownerAddress && !privateEnvelopeBelongsToOwner(envelope, input.ownerAddress)) {
+          return undefined;
+        }
+
         return input.hydrate === false ? envelope : hydratePrivateOperationEnvelope(envelope);
       } catch {
         return undefined;
@@ -561,113 +577,185 @@ export async function listPaayeePrivateOperationEnvelopes(input: {
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 }
 
+function privateEnvelopeBelongsToOwner(
+  envelope: PaayeePrivateOperationEnvelope,
+  ownerAddress: string,
+): boolean {
+  const storedOwner = envelope.ownerAddress ?? envelope.fromAddress;
+  return Boolean(storedOwner && storedOwner.toLowerCase() === ownerAddress.toLowerCase());
+}
+
 export async function getPaayeeConfidentialBalanceDisplay(input: {
   assetCode: StablecoinAssetCode;
   chainId: number;
-  confidentialOperations?: KlydeConfidentialOperation[];
+  confidentialOperations?: PaayeeConfidentialOperation[];
+  decrypt?: boolean;
   hasOperationHistory?: boolean;
   owner?: string;
 }): Promise<PaayeeConfidentialBalanceDisplay> {
   if (runtimeConfig.zamaMobileRuntimeEnabled) {
     const tokenAddress = await resolveActiveConfidentialBalanceTokenAddress(input.assetCode, input.chainId);
+    const cacheKey = createConfidentialBalanceCacheKey(input);
+    const cachedAmount = decryptedBalanceCache.get(cacheKey);
 
-    try {
-      const amount = await getPaayeeZamaConfidentialBalance({
-        chainId: input.chainId,
-        owner: input.owner,
-        tokenAddress,
-      });
-      const numericAmount = Number(amount) / 10 ** stablecoinScale[input.assetCode];
-
+    if (cachedAmount !== undefined) {
       return {
         code: input.assetCode,
-        displayAmount: formatStablecoinAmount(numericAmount, input.assetCode),
+        displayAmount: formatStablecoinAmount(cachedAmount, input.assetCode),
         status: 'available',
       };
-    } catch (error) {
-      logConfidentialBalanceRead('zama_balance_failed', input, error);
+    }
 
-      const localOperationBalance = resolveLocalConfidentialOperationBalance(input);
-      if (localOperationBalance !== undefined) {
-        return {
-          code: input.assetCode,
-          displayAmount: formatStablecoinAmount(localOperationBalance, input.assetCode),
-          status: 'available',
-        };
-      }
-
+    if (input.decrypt !== false) {
       try {
-        const encryptedHandle = await getPaayeeZamaConfidentialBalanceHandle({
+        const amount = await getPaayeeZamaConfidentialBalance({
           chainId: input.chainId,
           owner: input.owner,
           tokenAddress,
         });
+        const numericAmount = Number(amount) / 10 ** stablecoinScale[input.assetCode];
+        decryptedBalanceCache.set(cacheKey, numericAmount);
 
         return {
           code: input.assetCode,
-          encryptedHandle,
-          status: 'handle_available',
+          displayAmount: formatStablecoinAmount(numericAmount, input.assetCode),
+          status: 'available',
         };
-      } catch (handleError) {
-        logConfidentialBalanceRead('zama_handle_failed', input, handleError);
+      } catch (error) {
+        logConfidentialBalanceRead('zama_balance_failed', input, error);
+
+        const localOperationBalance = resolveLocalConfidentialOperationBalance(input);
+        if (localOperationBalance !== undefined) {
+          return {
+            code: input.assetCode,
+            displayAmount: formatStablecoinAmount(localOperationBalance, input.assetCode),
+            status: 'available',
+          };
+        }
       }
     }
-  }
 
-  try {
-    const balance = await getKlydeConfidentialBalance({
-      chainId: input.chainId,
-      owner: input.owner as `0x${string}` | undefined,
-      underlyingSymbol: input.assetCode,
-    });
-    const amount = typeof balance.amount === 'bigint' ? balance.amount : BigInt(String(balance.amount));
-    const numericAmount = Number(amount) / 10 ** stablecoinScale[input.assetCode];
+    try {
+      const encryptedHandle = await getPaayeeZamaConfidentialBalanceHandle({
+        chainId: input.chainId,
+        owner: input.owner,
+        tokenAddress,
+      });
 
-    return {
-      code: input.assetCode,
-      displayAmount: formatStablecoinAmount(numericAmount, input.assetCode),
-      encryptedHandle: balance.encryptedHandle,
-      status: 'available',
-    };
-  } catch (error) {
-    logConfidentialBalanceRead('klyde_privacy_engine_balance_failed', input, error);
-    // Fall through to handle-only mode when the mobile relayer/decryption engine is not configured yet.
-  }
-
-  try {
-    const handle = await getKlydeConfidentialBalanceHandle({
-      chainId: input.chainId,
-      owner: input.owner as `0x${string}` | undefined,
-      underlyingSymbol: input.assetCode,
-    });
-
-    if (!handle.encryptedHandle) {
       return {
         code: input.assetCode,
-        status: 'unavailable',
+        encryptedHandle,
+        status: 'handle_available',
       };
+    } catch (handleError) {
+      logConfidentialBalanceRead('zama_handle_failed', input, handleError);
     }
-
-    return {
-      code: input.assetCode,
-      encryptedHandle: handle.encryptedHandle,
-      status: 'handle_available',
-    };
-  } catch (error) {
-    logConfidentialBalanceRead('klyde_privacy_engine_handle_failed', input, error);
-    if (!input.hasOperationHistory) {
-      return {
-        code: input.assetCode,
-        displayAmount: formatStablecoinAmount(0, input.assetCode),
-        status: 'unavailable',
-      };
-    }
-
-    return {
-      code: input.assetCode,
-      status: 'unavailable',
-    };
   }
+
+  return {
+    code: input.assetCode,
+    displayAmount: input.hasOperationHistory ? undefined : formatStablecoinAmount(0, input.assetCode),
+    status: 'unavailable',
+  };
+}
+
+export async function revealPaayeeConfidentialBalances(input: {
+  assetCodes: StablecoinAssetCode[];
+  chainId: number;
+  owner?: string;
+}): Promise<void> {
+  const uncachedAssetCodes = input.assetCodes.filter(
+    (assetCode) => !decryptedBalanceCache.has(createConfidentialBalanceCacheKey({ ...input, assetCode })),
+  );
+  if (uncachedAssetCodes.length === 0) return;
+
+  const tokens = await Promise.all(uncachedAssetCodes.map(async (assetCode) => ({
+    key: assetCode,
+    tokenAddress: await resolveActiveConfidentialBalanceTokenAddress(assetCode, input.chainId),
+  })));
+  const values = await readConfidentialBalancesAfterPropagation({
+    chainId: input.chainId,
+    owner: input.owner,
+    tokens,
+  });
+  for (const assetCode of uncachedAssetCodes) {
+    const amount = values[assetCode];
+    if (amount === undefined) continue;
+    decryptedBalanceCache.set(
+      createConfidentialBalanceCacheKey({ ...input, assetCode }),
+      Number(amount) / 10 ** stablecoinScale[assetCode],
+    );
+  }
+}
+
+const confidentialBalanceRetryDelaysMs = [900, 1_800, 3_200];
+
+async function readConfidentialBalancesAfterPropagation(input: {
+  chainId: number;
+  owner?: string;
+  tokens: { key: string; tokenAddress: string }[];
+}): Promise<Record<string, bigint>> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await getPaayeeZamaConfidentialBalances(input);
+    } catch (error) {
+      const retryDelay = confidentialBalanceRetryDelaysMs[attempt];
+      if (retryDelay === undefined || !isTransientConfidentialBalanceError(error)) {
+        throw error;
+      }
+
+      if (__DEV__) {
+        console.info('[paayee.confidential.balance]', {
+          attempt: attempt + 1,
+          event: 'waiting_for_ciphertext',
+          retryInMs: retryDelay,
+        });
+      }
+      await delay(retryDelay);
+    }
+  }
+}
+
+function isTransientConfidentialBalanceError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (/reject|cancel|denied|unauthori[sz]ed|permission|signature/.test(message)) return false;
+
+  return /cipher|handle|relayer|gateway|not found|not available|not registered|propagat|failed to fetch|network|timeout|timed out|404|400/.test(
+    message,
+  );
+}
+
+function delay(durationMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+const decryptedBalanceCache = new Map<string, number>();
+
+export function clearPaayeeConfidentialBalanceCache(input?: {
+  assetCode?: StablecoinAssetCode;
+  chainId?: number;
+  owner?: string;
+}): void {
+  if (!input) {
+    decryptedBalanceCache.clear();
+    return;
+  }
+
+  for (const key of decryptedBalanceCache.keys()) {
+    const [chainId, owner, assetCode] = key.split(':');
+    if (input.chainId !== undefined && String(input.chainId) !== chainId) continue;
+    if (input.owner && input.owner.toLowerCase() !== owner) continue;
+    if (input.assetCode && input.assetCode !== assetCode) continue;
+    decryptedBalanceCache.delete(key);
+  }
+}
+
+function createConfidentialBalanceCacheKey(input: {
+  assetCode: StablecoinAssetCode;
+  chainId: number;
+  owner?: string;
+}): string {
+  return `${input.chainId}:${input.owner?.toLowerCase() ?? 'active'}:${input.assetCode}`;
 }
 
 function logConfidentialBalanceRead(
@@ -731,10 +819,10 @@ async function executePrivateStablecoinTransfer(input: {
   amountMinorUnits: string;
   assetCode: StablecoinAssetCode;
   chainId: number;
-  operation: KlydeConfidentialOperation;
+  operation: PaayeeConfidentialOperation;
   recipientWalletAddress: string;
 }): Promise<{
-  operation: KlydeConfidentialOperation;
+  operation: PaayeeConfidentialOperation;
   transactionHash?: string;
   userOperationHash?: string;
 }> {
@@ -745,7 +833,7 @@ async function executePrivateStablecoinTransfer(input: {
     recipient: input.recipientWalletAddress,
     tokenAddress,
   });
-  const submitted = await markKlydeConfidentialOperationSubmitted({
+  const submitted = await markPaayeeConfidentialOperationSubmitted({
     operationId: input.operation.id,
     transactionHash: transfer.transactionHash,
     userOperationHash: transfer.userOperationHash,
@@ -755,7 +843,7 @@ async function executePrivateStablecoinTransfer(input: {
       tokenAddress,
     },
   });
-  const completed = await completeKlydeConfidentialOperation({
+  const completed = await completePaayeeConfidentialOperation({
     operationId: submitted.id,
     status: 'succeeded',
     transactionHash: transfer.transactionHash,
@@ -775,13 +863,13 @@ async function executePrivateStablecoinTransfer(input: {
 
 async function executePrivateStablecoinConversion(input: {
   chainId: number;
-  operation: KlydeConfidentialOperation;
+  operation: PaayeeConfidentialOperation;
   sourceAmountMinorUnits: string;
   sourceAssetCode: StablecoinAssetCode;
   targetAmountMinorUnits: string;
   targetAssetCode: StablecoinAssetCode;
 }): Promise<{
-  operation: KlydeConfidentialOperation;
+  operation: PaayeeConfidentialOperation;
   transactionHash?: string;
   userOperationHash?: string;
 }> {
@@ -796,7 +884,7 @@ async function executePrivateStablecoinConversion(input: {
     targetAmountMinorUnits: input.targetAmountMinorUnits,
     targetTokenAddress,
   });
-  const submitted = await markKlydeConfidentialOperationSubmitted({
+  const submitted = await markPaayeeConfidentialOperationSubmitted({
     operationId: input.operation.id,
     transactionHash: conversion.transactionHash,
     userOperationHash: conversion.userOperationHash,
@@ -807,7 +895,7 @@ async function executePrivateStablecoinConversion(input: {
       targetTokenAddress,
     },
   });
-  const completed = await completeKlydeConfidentialOperation({
+  const completed = await completePaayeeConfidentialOperation({
     operationId: submitted.id,
     status: 'succeeded',
     transactionHash: conversion.transactionHash,
@@ -828,19 +916,19 @@ async function executePrivateStablecoinConversion(input: {
 
 async function executePrivateStablecoinToNgnSettlement(input: {
   chainId: number;
-  operation: KlydeConfidentialOperation;
+  operation: PaayeeConfidentialOperation;
   sourceAmountMinorUnits: string;
   sourceAssetCode: StablecoinAssetCode;
   targetAmount: number;
   targetAmountMinorUnits: string;
   targetAssetCode: 'NGN';
 }): Promise<{
-  operation: KlydeConfidentialOperation;
+  operation: PaayeeConfidentialOperation;
   transactionHash?: string;
   userOperationHash?: string;
 }> {
   const sourceTokenAddress = await resolvePrivateAssetTokenAddress(input.sourceAssetCode, input.chainId);
-  const settlementAddress = getKlydePrivateSettlementAddress(input.chainId);
+  const settlementAddress = getPaayeePrivateSettlementAddress(input.chainId);
   logPrivateConversionStage('private_settlement_transfer_starting', {
     operationId: input.operation.id,
     settlementAddress,
@@ -859,7 +947,7 @@ async function executePrivateStablecoinToNgnSettlement(input: {
     transactionHash: privateSettlementTransfer.transactionHash,
     userOperationHash: privateSettlementTransfer.userOperationHash,
   });
-  const submitted = await markKlydeConfidentialOperationSubmitted({
+  const submitted = await markPaayeeConfidentialOperationSubmitted({
     operationId: input.operation.id,
     transactionHash: privateSettlementTransfer.transactionHash,
     userOperationHash: privateSettlementTransfer.userOperationHash,
@@ -870,7 +958,7 @@ async function executePrivateStablecoinToNgnSettlement(input: {
       sourceTokenAddress,
     },
   });
-  const settlement = await completeKlydeConfidentialSettlement({
+  const settlement = await completePaayeeConfidentialSettlement({
     operationId: submitted.id,
     direction: 'private_stablecoin_to_ngn',
     sourceAmount: {
@@ -908,8 +996,8 @@ async function executePrivateStablecoinToNgnSettlement(input: {
   };
 }
 
-function getKlydePrivateSettlementAddress(chainId: number): string {
-  const configured = process.env.EXPO_PUBLIC_KLYDE_PRIVACY_SETTLEMENT_ADDRESS;
+function getPaayeePrivateSettlementAddress(chainId: number): string {
+  const configured = process.env.EXPO_PUBLIC_PAAYEE_PRIVACY_SETTLEMENT_ADDRESS;
   if (configured) {
     return configured;
   }
@@ -918,7 +1006,7 @@ function getKlydePrivateSettlementAddress(chainId: number): string {
     return '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
   }
 
-  throw new Error('EXPO_PUBLIC_KLYDE_PRIVACY_SETTLEMENT_ADDRESS is required for private stablecoin to NGN settlement.');
+  throw new Error('EXPO_PUBLIC_PAAYEE_PRIVACY_SETTLEMENT_ADDRESS is required for private stablecoin to NGN settlement.');
 }
 
 function logPrivateConversionStage(stage: string, metadata: Record<string, unknown>): void {
@@ -933,10 +1021,10 @@ function logPrivateConversionStage(stage: string, metadata: Record<string, unkno
 }
 
 async function resolvePrivateAssetTokenAddress(assetCode: StablecoinAssetCode, chainId: number): Promise<string> {
-  const asset = await resolveKlydeActiveConfidentialAsset(assetCode, chainId);
+  const asset = resolvePaayeeConfidentialAsset(assetCode, chainId);
 
   if (!asset.tokenAddress) {
-    throw new Error(`Klyde has no active ${assetCode} confidential token address for this chain.`);
+    throw new Error(`Paayee has no active ${assetCode} confidential token address for this chain.`);
   }
 
   return asset.tokenAddress;
@@ -946,21 +1034,13 @@ async function resolveActiveConfidentialBalanceTokenAddress(
   assetCode: StablecoinAssetCode,
   chainId: number,
 ): Promise<string> {
-  const asset = await resolveKlydeActiveConfidentialAsset(assetCode, chainId);
+  const asset = resolvePaayeeConfidentialAsset(assetCode, chainId);
 
   if (!asset.tokenAddress) {
-    throw new Error(`Klyde has no active ${assetCode} confidential token address for this chain.`);
+    throw new Error(`Paayee has no active ${assetCode} confidential token address for this chain.`);
   }
 
   return asset.tokenAddress;
-}
-
-async function resolveKlydeActiveConfidentialAsset(assetCode: StablecoinAssetCode, chainId: number) {
-  return resolveKlydeConfidentialAsset({
-    chainId,
-    mode: KLYDE_ACTIVE_CONFIDENTIAL_MODE,
-    underlyingSymbol: assetCode,
-  });
 }
 
 async function savePrivateOperationEnvelope(envelope: PaayeePrivateOperationEnvelope): Promise<void> {
@@ -1045,7 +1125,7 @@ async function hydratePrivateOperationEnvelope(
 function resolveLocalConfidentialOperationBalance(input: {
   assetCode: StablecoinAssetCode;
   chainId: number;
-  confidentialOperations?: KlydeConfidentialOperation[];
+  confidentialOperations?: PaayeeConfidentialOperation[];
   owner?: string;
 }): number | undefined {
   if (input.chainId !== 31337 || !input.confidentialOperations?.length) {
@@ -1103,7 +1183,7 @@ function resolveLocalConfidentialOperationBalance(input: {
 }
 
 function operationMatchesStablecoin(
-  operation: KlydeConfidentialOperation,
+  operation: PaayeeConfidentialOperation,
   assetCode: StablecoinAssetCode,
 ): boolean {
   const normalizedAssetCode = assetCode.toUpperCase();
@@ -1137,7 +1217,7 @@ function operationMatchesStablecoin(
 }
 
 function operationAmountMinorUnits(
-  operation: KlydeConfidentialOperation,
+  operation: PaayeeConfidentialOperation,
   assetCode: StablecoinAssetCode,
 ): bigint {
   if (!operation.amount || operation.amount.currency.toUpperCase() !== assetCode) {
@@ -1241,7 +1321,7 @@ function toMoneyMinorUnits(amount: number, assetCode: SendAssetCode): string {
   return String(Math.round(amount * 10 ** moneyScale[assetCode]));
 }
 
-function toKlydeMoneyAmount(amount: number, assetCode: SendAssetCode, minorUnits: string) {
+function toPaayeeMoneyAmount(amount: number, assetCode: SendAssetCode, minorUnits: string) {
   return {
     currency: assetCode,
     display: String(amount),
@@ -1259,10 +1339,10 @@ function resolvePrivateConversionOperationAmount(input: {
   targetAssetCode: SendAssetCode;
 }) {
   if (input.sourceAssetCode === 'NGN' && isStablecoinAsset(input.targetAssetCode)) {
-    return toKlydeMoneyAmount(input.targetAmount, input.targetAssetCode, input.targetAmountMinorUnits);
+    return toPaayeeMoneyAmount(input.targetAmount, input.targetAssetCode, input.targetAmountMinorUnits);
   }
 
-  return toKlydeMoneyAmount(input.sourceAmount, input.sourceAssetCode, input.sourceAmountMinorUnits);
+  return toPaayeeMoneyAmount(input.sourceAmount, input.sourceAssetCode, input.sourceAmountMinorUnits);
 }
 
 function formatPrivateMoneyAmount(amount: number, assetCode: SendAssetCode): string {

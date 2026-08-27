@@ -2,7 +2,7 @@
   "name": "@paayee/contracts",
   "version": "0.1.0",
   "private": true,
-  "description": "Paayee app-managed confidential token contracts for Klyde privacy rails.",
+  "description": "Paayee-owned ERC-7984 confidential stablecoin contracts.",
   "engines": {
     "node": ">=20",
     "npm": ">=7.0.0"
@@ -13,7 +13,6 @@
     "deploy:localhost": "hardhat deploy --network localhost",
     "deploy:localhost:reset": "hardhat deploy --network localhost --reset",
     "deploy:sepolia": "hardhat deploy --network sepolia",
-    "register:klyde": "node scripts/register-klyde-confidential-assets.js",
     "test": "hardhat test",
     "test:sepolia": "hardhat test --network sepolia",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",

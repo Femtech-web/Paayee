@@ -613,8 +613,8 @@ async function clearLocalKlydeSessionState(client?: KlydeClient): Promise<void> 
 }
 
 function assertRealKlydeIntegrationsEnabled(): void {
-  if (!runtimeConfig.realIntegrationsEnabled) {
-    throw new Error('Klyde integrations are disabled for this build.');
+  if (!runtimeConfig.realIntegrationsEnabled || !runtimeConfig.legacyMoneyRailEnabled) {
+    throw new Error('This legacy money rail is not enabled in Paayee.');
   }
 }
 

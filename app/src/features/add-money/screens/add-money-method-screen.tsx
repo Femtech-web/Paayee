@@ -46,17 +46,23 @@ export function AddMoneyMethodScreen() {
           />
         ) : (
           <MethodRow
+            badge="Soon"
+            disabled
             icon="home"
             title="Add via bank transfer"
-            text="Fund your NGN balance using your Paayee account details."
+            text="NGN bank funding will open after Paayee’s regulated fiat provider is connected."
             onPress={() => router.push('/add-money/bank-transfer?asset=NGN' as Href)}
           />
         )}
 
         <MethodRow
+          badge="Soon"
+          disabled
           icon="refresh-cw"
           title="Add via conversion"
-          text={`Convert funds from another balance to your ${asset.code} balance.`}
+          text={isStablecoin
+            ? `NGN to ${asset.code} conversion will be available after Paayee's fiat provider is connected.`
+            : 'Convert USDC or USDT into NGN after Paayee’s payout provider is connected.'}
           onPress={() => router.push(`/add-money/conversion?asset=${asset.code}` as Href)}
         />
       </FadeInView>

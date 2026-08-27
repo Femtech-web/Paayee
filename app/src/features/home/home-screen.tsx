@@ -1,5 +1,5 @@
 import { Feather } from '@react-native-vector-icons/feather';
-import { type Href, useRouter } from 'expo-router';
+import { type Href, usePathname, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { SkeletonBlock } from '@/components/loading/skeleton';
 import { Avatar } from '@/components/ui/avatar';
 import { Colors } from '@/constants/theme';
 import { useAppData, type AppBalance } from '@/features/app-data';
+import { claimDepositReceiptNotification } from '@/features/app-data/deposit-receipt-notifications';
 import { styles } from './home-screen.styles';
 
 const nigeriaFlag = require('../../../assets/images/nigeria.png');
@@ -23,33 +24,54 @@ const quickActions = [
 ] as const;
 const homeTransactionLimit = 3;
 
+function readTransactionAsset(title: string, amount: string): 'USDC' | 'USDT' | 'NGN' {
+  const text = `${title} ${amount}`.toUpperCase();
+  if (text.includes('USDC')) return 'USDC';
+  if (text.includes('USDT')) return 'USDT';
+  return 'NGN';
+}
+
 export function HomeScreen() {
   const [balanceVisible, setBalanceVisible] = useState(false);
   const [balanceRevealLoading, setBalanceRevealLoading] = useState(false);
   const { data, loading, refresh } = useAppData();
   const latestSeenActivityId = useRef<string | undefined>(undefined);
   const router = useRouter();
+  const pathname = usePathname();
   const balances = data?.balances ?? [];
   const transactions = data?.transactions ?? [];
   const recentTransactions = transactions.slice(0, homeTransactionLimit);
-  const latestActivityId = transactions[0]?.id;
+  const latestActivity = transactions[0];
+  const latestActivitySignature = latestActivity ? `${latestActivity.id}:${latestActivity.detail}` : undefined;
   const totalDisplay = formatPrivateBalanceDisplay(data?.totalDisplay ?? '₦0.00', balanceVisible, 'total');
 
   useEffect(() => {
-    if (!latestActivityId) {
+    if (!latestActivitySignature || pathname !== '/') {
       return;
     }
 
-    if (!latestSeenActivityId.current) {
-      latestSeenActivityId.current = latestActivityId;
-      return;
-    }
+    if (latestSeenActivityId.current === latestActivitySignature) return;
+    latestSeenActivityId.current = latestActivitySignature;
+    setBalanceVisible(false);
 
-    if (latestSeenActivityId.current !== latestActivityId) {
-      latestSeenActivityId.current = latestActivityId;
-      setBalanceVisible(false);
+    if (
+      (latestActivity?.kind === 'deposit' || latestActivity?.kind === 'private-receive')
+      && latestActivity.detail.startsWith('Confirmed')
+    ) {
+      void claimDepositReceiptNotification(data?.profile.smartAccountAddress, latestActivity).then((shouldOpen) => {
+        if (shouldOpen) {
+          const receiptParam = latestActivity.receiptId
+            ? `&receiptId=${encodeURIComponent(latestActivity.receiptId)}`
+            : '';
+        router.push(
+          `/operation-success?title=${encodeURIComponent(latestActivity.title)}&amount=${encodeURIComponent(
+            latestActivity.amount.replace(/^\+/, ''),
+          )}&asset=${encodeURIComponent(readTransactionAsset(latestActivity.title, latestActivity.amount))}&kind=${latestActivity.kind}&transactionId=${encodeURIComponent(latestActivity.id)}${receiptParam}` as Href,
+        );
+        }
+      });
     }
-  }, [latestActivityId]);
+  }, [data?.profile.smartAccountAddress, latestActivity, latestActivitySignature, pathname, router]);
 
   return (
     <View style={styles.screen}>
@@ -78,7 +100,7 @@ export function HomeScreen() {
               <HomeLoadingState />
             ) : (
               <FadeInView delay={60} style={styles.balanceBlock}>
-                <Text style={styles.balancePill}>Total private balance</Text>
+                <Text style={styles.balancePill}>Total balance</Text>
                 <View style={styles.balanceRow}>
                   {balanceRevealLoading && balanceVisible ? (
                     <SkeletonBlock style={styles.balanceAmountSkeleton} />
@@ -99,7 +121,7 @@ export function HomeScreen() {
                       setBalanceVisible(true);
                       setBalanceRevealLoading(true);
                       try {
-                        await refresh({ silent: true });
+                        await refresh({ revealPrivateBalances: true, silent: true });
                       } finally {
                         setBalanceRevealLoading(false);
                       }

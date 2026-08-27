@@ -1,4 +1,5 @@
 import { Feather } from '@react-native-vector-icons/feather';
+import * as Clipboard from 'expo-clipboard';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, Share, Text, View } from 'react-native';
@@ -11,6 +12,17 @@ import {
   getPaayeePrivateOperationEnvelope,
   type PaayeePrivateOperationEnvelope,
 } from '@/features/confidential/confidential-money';
+import {
+  decryptPaayeeZamaEncryptedValue,
+  getPaayeeWalletAddress,
+} from '@/features/confidential/zama-mobile-runtime';
+import { runtimeConfig } from '@/config/runtime';
+import {
+  getPaayeeActivityReceipt,
+  getPaayeeChainActivity,
+  type PaayeeOperation,
+  type PaayeeReceipt,
+} from '@/integrations/paayee';
 import {
   getKlydeConversion,
   getKlydeReceipt,
@@ -43,6 +55,14 @@ type DetailRecord =
       kind: 'private';
       operationId: string;
       value: PaayeePrivateOperationEnvelope;
+    }
+  | {
+      kind: 'paayee-receipt';
+      value: PaayeeReceipt;
+    }
+  | {
+      kind: 'paayee-operation';
+      value: PaayeeOperation;
     };
 
 export function TransactionDetailScreen() {
@@ -63,6 +83,7 @@ export function TransactionDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [copiedTransactionHash, setCopiedTransactionHash] = useState('');
 
   const loadTransaction = useCallback(async () => {
     if (!transactionId) {
@@ -81,13 +102,43 @@ export function TransactionDetailScreen() {
       }
 
       if (kind === 'private-send' || kind === 'private-conversion') {
-        const envelope = await getPaayeePrivateOperationEnvelope(privateEnvelopeId);
+        const ownerAddress = await getPaayeeWalletAddress().catch(() => undefined);
+        const envelope = ownerAddress
+          ? await getPaayeePrivateOperationEnvelope(privateEnvelopeId, ownerAddress)
+          : undefined;
         if (envelope) {
           setRecord({ kind: 'private', operationId: transactionId, value: envelope });
           return;
         }
 
         setErrorMessage('Private receipt payload is unavailable on this device.');
+        return;
+      }
+
+      if (receiptId && (kind === 'deposit' || kind === 'private-receive' || kind === 'shield' || kind === 'unshield' || kind === 'send')) {
+        const receipt = await getPaayeeActivityReceipt(receiptId);
+        setRecord({ kind: 'paayee-receipt', value: await revealPrivateReceiptAmount(receipt) });
+        return;
+      }
+
+      if (kind === 'send' || kind === 'shield' || kind === 'unshield') {
+        const activity = await getPaayeeChainActivity();
+        const operationId = stripPaayeeActivityPrefix(transactionId);
+        const operation = activity.operations.find((item) =>
+          item.id === operationId || item.transaction_hash.toLowerCase() === operationId.toLowerCase());
+        const receipt = operation
+          ? activity.receipts.find((item) => item.operation_id === operation.id)
+          : undefined;
+        if (receipt) {
+          setRecord({ kind: 'paayee-receipt', value: receipt });
+          return;
+        }
+        if (operation) {
+          setRecord({ kind: 'paayee-operation', value: operation });
+          return;
+        }
+
+        setErrorMessage('This transaction has not reached Paayee yet. Pull down to check again.');
         return;
       }
 
@@ -177,7 +228,7 @@ export function TransactionDetailScreen() {
         ) : display ? (
           <>
             <View style={styles.hero}>
-      <View style={styles.heroIcon}>
+              <View style={styles.heroIcon}>
                 <Feather name={display.icon} size={32} color="#2D3441" />
                 <View style={styles.assetDot}>
                   <Text style={styles.assetDotText}>{getAssetBadgeText(display.assetCode)}</Text>
@@ -200,9 +251,30 @@ export function TransactionDetailScreen() {
                 {display.rows.map((row) => (
                   <View key={row.label} style={styles.detailRow}>
                     <Text style={styles.detailLabel}>{row.label}</Text>
-                    <Text selectable numberOfLines={2} style={styles.detailValue}>
-                      {row.value}
-                    </Text>
+                    {row.copyValue ? (
+                      <PressableScale
+                        accessibilityHint="Copies the complete transaction hash"
+                        accessibilityLabel="Copy transaction hash"
+                        accessibilityRole="button"
+                        onPress={() => {
+                          void Clipboard.setStringAsync(row.copyValue ?? '');
+                          setCopiedTransactionHash(row.copyValue ?? '');
+                        }}
+                        style={styles.detailValueAction}>
+                        <Text selectable numberOfLines={2} style={styles.detailValueActionText}>
+                          {row.value}
+                        </Text>
+                        <Feather
+                          name={copiedTransactionHash === row.copyValue ? 'check' : 'copy'}
+                          size={15}
+                          color={copiedTransactionHash === row.copyValue ? '#2F8F46' : '#697386'}
+                        />
+                      </PressableScale>
+                    ) : (
+                      <Text selectable numberOfLines={2} style={styles.detailValue}>
+                        {row.value}
+                      </Text>
+                    )}
                   </View>
                 ))}
               </View>
@@ -330,11 +402,91 @@ function createDisplay(record: DetailRecord): {
   canRepeat: boolean;
   date: string;
   icon: DisplayIcon;
-  rows: { label: string; value: string }[];
+  rows: { copyValue?: string; label: string; value: string }[];
   status: string;
   subtitle: string;
   timeline: KlydeTimelineItem[];
 } {
+  if (record.kind === 'paayee-receipt') {
+    const receipt = record.value;
+    const assetCode = receipt.token_symbol ?? 'USDC';
+    const decimals = receipt.token_decimals ?? 6;
+    const privateIncoming = receipt.receipt_type === 'private_receive';
+    const numericAmount = receipt.amount_minor_units === undefined
+      ? undefined
+      : Number(receipt.amount_minor_units) / 10 ** decimals;
+    const amount = numericAmount === undefined
+      ? `Private ${assetCode}`
+      : `${numericAmount.toLocaleString(undefined, {
+          maximumFractionDigits: decimals,
+          minimumFractionDigits: 2,
+        })} ${assetCode}`;
+    const incoming = receipt.receipt_type === 'deposit' || privateIncoming;
+    const sender = receipt.sender_handle
+      ?? receipt.sender_name
+      ?? (receipt.from_address ? shortenAddress(receipt.from_address) : undefined);
+
+    return {
+      amount: incoming && numericAmount !== undefined ? `+${amount}` : amount,
+      assetCode,
+      canRepeat: false,
+      date: formatLongDate(receipt.created_at),
+      icon: incoming ? 'arrow-down-left' : receipt.receipt_type === 'shield' ? 'arrow-down-left' : 'arrow-up-right',
+      rows: [
+        { label: 'Asset', value: assetCode },
+        { label: privateIncoming ? 'Private amount received' : incoming ? 'Public amount received' : 'Amount', value: amount },
+        ...(privateIncoming && sender ? [{ label: 'From', value: sender }] : []),
+        {
+          label: 'Transaction',
+          value: receipt.transaction_hash ? shortenAddress(receipt.transaction_hash) : 'Pending',
+          ...(receipt.transaction_hash ? { copyValue: receipt.transaction_hash } : {}),
+        },
+      ],
+      status: receipt.status,
+      subtitle: receipt.detail,
+      timeline: ensureTimeline(undefined, receipt.status, receipt.receipt_type),
+    };
+  }
+
+  if (record.kind === 'paayee-operation') {
+    const operation = record.value;
+    const assetCode = operation.token_symbol;
+    const numericAmount = Number(operation.amount_minor_units) / 1_000_000;
+    const amount = `${numericAmount.toLocaleString(undefined, {
+      maximumFractionDigits: 6,
+      minimumFractionDigits: 2,
+    })} ${assetCode}`;
+    const operationKind = operation.kind === 'public_send' ? 'send' : operation.kind;
+    const subtitle = operation.kind === 'public_send'
+      ? operation.status === 'confirmed' ? 'Spendable transfer confirmed.' : 'Spendable transfer submitted.'
+      : operation.kind === 'shield'
+        ? 'Making this balance private.'
+        : 'Moving this balance to spendable.';
+
+    return {
+      amount,
+      assetCode,
+      canRepeat: false,
+      date: formatLongDate(operation.created_at),
+      icon: operation.kind === 'shield' ? 'arrow-down-left' : 'arrow-up-right',
+      rows: [
+        { label: 'Asset', value: assetCode },
+        { label: 'Amount', value: amount },
+        ...(operation.destination_address
+          ? [{ label: 'Destination', value: shortenAddress(operation.destination_address) }]
+          : []),
+        {
+          copyValue: operation.transaction_hash,
+          label: 'Transaction',
+          value: shortenAddress(operation.transaction_hash),
+        },
+      ],
+      status: operation.status,
+      subtitle,
+      timeline: ensureTimeline(undefined, operation.status, operationKind),
+    };
+  }
+
   if (record.kind === 'conversion') {
     const conversion = record.value;
     const isPrivateStablecoinConversion =
@@ -406,7 +558,11 @@ function createDisplay(record: DetailRecord): {
       status: envelope.status,
       subtitle: isConversion
         ? `Private conversion to ${envelope.targetAssetCode ?? envelope.assetCode}`
-        : 'Private Paayee confidential-token operation',
+        : envelope.recipientHandle
+          ? `Private transfer to @${envelope.recipientHandle}`
+          : envelope.recipientName
+            ? `Private transfer to ${envelope.recipientName}`
+            : 'Private stablecoin transfer',
       timeline: ensureTimeline(undefined, envelope.status, isConversion ? 'private conversion' : 'private transfer'),
     };
   }
@@ -419,7 +575,7 @@ function createDisplay(record: DetailRecord): {
   const privateCredit = record.privateCreditOperation
     ? formatPrivateCreditStatus(record.privateCreditOperation)
     : privateCreditSymbol
-      ? `Awaiting ${privateCreditSymbol} auto-shield`
+      ? `Awaiting ${privateCreditSymbol} privacy confirmation`
       : undefined;
   const amountDisplay = formatMoneyAmountWithAsset(receipt.amount, { assetCode });
   const amountLabel = isStablecoinDeposit ? 'Public amount received' : isIncoming ? 'You received' : 'You sent';
@@ -454,24 +610,70 @@ function createDisplay(record: DetailRecord): {
   };
 }
 
+async function revealPrivateReceiptAmount(receipt: PaayeeReceipt): Promise<PaayeeReceipt> {
+  if (receipt.receipt_type !== 'private_receive' || !receipt.encrypted_amount_handle || !receipt.token_symbol) {
+    return receipt;
+  }
+  const tokenAddress = receipt.token_symbol === 'USDC'
+    ? runtimeConfig.paayeeCusdcAddress
+    : runtimeConfig.paayeeCusdtAddress;
+  if (!tokenAddress) return receipt;
+  try {
+    const amount = await decryptPaayeeZamaEncryptedValue({
+      chainId: runtimeConfig.zamaChainId,
+      encryptedHandle: receipt.encrypted_amount_handle,
+      tokenAddress,
+    });
+    return {
+      ...receipt,
+      amount_minor_units: amount.toString(),
+      detail: 'Private transfer confirmed. This amount was decrypted only for your wallet.',
+    };
+  } catch (error) {
+    if (__DEV__) console.warn('[paayee.private_receipt]', {
+      message: error instanceof Error ? error.message : String(error),
+      stage: 'transfer_amount_decrypt_failed',
+    });
+    return receipt;
+  }
+}
+
 function ensureTimeline(
   timeline: KlydeTimelineItem[] | undefined,
   status: string,
   kind: string,
 ): KlydeTimelineItem[] {
-  if (timeline?.length) {
+  const normalizedStatus = status.toLowerCase();
+  const isFailure = ['failed', 'expired', 'refunded', 'cancelled', 'reorged'].includes(normalizedStatus);
+  const isSuccess = ['confirmed', 'settled', 'succeeded', 'completed'].includes(normalizedStatus);
+  const terminal = isFailure || isSuccess;
+
+  // Keep a provider timeline when it agrees with the receipt. A terminal
+  // receipt must never retain a stale `current`/confirming step.
+  if (timeline?.length && (!terminal || !timeline.some((item) => item.status === 'current'))) {
     return timeline;
   }
 
-  const normalizedStatus = status.toLowerCase();
-  const isFailure = ['failed', 'expired', 'refunded', 'cancelled'].includes(normalizedStatus);
-  const isSuccess = ['settled', 'succeeded', 'completed'].includes(normalizedStatus);
   const isConversion = kind.includes('conversion');
-  const processingTitle = isConversion ? 'Processing conversion' : 'Processing payment';
-  const processingDescription =
-    isConversion
-      ? 'We are confirming the treasury settlement'
-      : 'We are confirming this payment';
+  const isDeposit = kind === 'deposit';
+  const isShield = kind === 'shield';
+  const isUnshield = kind === 'unshield';
+  const processingTitle = isConversion
+    ? 'Processing conversion'
+    : isDeposit
+      ? 'Confirming deposit'
+      : isShield || isUnshield
+        ? 'Confirming privacy update'
+        : 'Processing payment';
+  const processingDescription = isConversion
+    ? 'We are confirming the conversion'
+    : isDeposit
+      ? 'We are waiting for the deposit to be confirmed onchain'
+      : isShield
+        ? 'We are confirming your private balance update'
+        : isUnshield
+          ? 'We are confirming your public balance update'
+          : 'We are confirming this payment';
   const timelineItems: KlydeTimelineItem[] = [
     {
       step: `${kind}_initiated`,
@@ -480,7 +682,7 @@ function ensureTimeline(
     },
   ];
 
-  if (!isFailure && !isSuccess) {
+  if (!terminal) {
     timelineItems.push({
       step: `${kind}_processing`,
       title: processingTitle,
@@ -490,22 +692,11 @@ function ensureTimeline(
     return timelineItems;
   }
 
-  timelineItems.push({
-    step: `${kind}_processing`,
-    title: processingTitle,
-    status: 'completed',
-  });
-
   timelineItems.push(
     {
       step: isFailure ? `${kind}_failed` : `${kind}_complete`,
-      title: isFailure
-        ? isConversion
-          ? 'Conversion failed'
-          : 'Payment failed'
-        : isConversion
-          ? 'Conversion complete'
-          : 'Payment complete',
+      title: isFailure ? failureTimelineTitle(kind) : successTimelineTitle(kind),
+      description: isFailure ? undefined : successTimelineDescription(kind),
       status: isFailure ? 'failed' : 'completed',
     },
   );
@@ -513,9 +704,41 @@ function ensureTimeline(
   return timelineItems;
 }
 
+function successTimelineTitle(kind: string): string {
+  if (kind.includes('conversion')) return 'Conversion complete';
+  if (kind === 'deposit') return 'Deposit confirmed';
+  if (kind === 'private_receive') return 'Private transfer received';
+  if (kind === 'shield') return 'Money made private';
+  if (kind === 'unshield') return 'Money moved to public';
+  return 'Payment complete';
+}
+
+function successTimelineDescription(kind: string): string {
+  if (kind === 'deposit') return 'The funds are available in your public balance';
+  if (kind === 'private_receive') return 'Your private balance has been updated';
+  if (kind === 'shield') return 'Your private balance has been updated';
+  if (kind === 'unshield') return 'Your public balance has been updated';
+  if (kind.includes('conversion')) return 'The converted funds are available';
+  return 'This payment has been confirmed';
+}
+
+function failureTimelineTitle(kind: string): string {
+  if (kind.includes('conversion')) return 'Conversion failed';
+  if (kind === 'deposit') return 'Deposit not completed';
+  if (kind === 'shield' || kind === 'unshield') return 'Privacy update failed';
+  return 'Payment failed';
+}
+
 function isTerminalRecord(record: DetailRecord): boolean {
   if (record.kind === 'receipt' && record.privateCreditOperation) {
     return isTerminalPrivateCreditStatus(record.privateCreditOperation.status);
+  }
+
+  // A confirmed operation is still reconciled until its canonical receipt is
+  // available. This keeps the same timeline alive instead of stranding the
+  // user between an onchain confirmation and the worker-created receipt.
+  if (record.kind === 'paayee-operation') {
+    return record.value.status === 'failed';
   }
 
   const status = record.kind === 'conversion' ? record.value.status : record.value.status;
@@ -524,7 +747,7 @@ function isTerminalRecord(record: DetailRecord): boolean {
 }
 
 function isTerminalStatus(status: string): boolean {
-  return ['settled', 'succeeded', 'completed', 'failed', 'expired', 'refunded', 'cancelled'].includes(status);
+  return ['confirmed', 'settled', 'succeeded', 'completed', 'failed', 'expired', 'refunded', 'cancelled'].includes(status);
 }
 
 function getStatusTone(status: string): 'error' | 'pending' | 'success' {
@@ -590,11 +813,11 @@ function formatPrivateCreditStatus(operation: KlydeConfidentialOperation): strin
     case 'succeeded':
       return `${symbol} credited privately`;
     case 'submitted':
-      return `${symbol} auto-shield confirming`;
+      return `${symbol} privacy transaction confirming`;
     case 'prepared':
-      return `${symbol} auto-shield pending`;
+      return `${symbol} privacy transaction pending`;
     case 'failed':
-      return `${symbol} auto-shield needs attention`;
+      return `${symbol} privacy transaction needs attention`;
   }
 }
 
@@ -709,6 +932,10 @@ function shortenAddress(address: string): string {
 
 function readParam(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function stripPaayeeActivityPrefix(value: string): string {
+  return value.replace(/^(operation|deposit|private-transfer):/, '');
 }
 
 function titleCase(value: string): string {

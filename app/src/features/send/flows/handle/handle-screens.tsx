@@ -273,6 +273,7 @@ function createInitials(name: string) {
 export function PaayeeHandleAmountScreen() {
   return (
     <SharedAmountScreen
+      allowedAssetCodes={['USDC', 'USDT']}
       arrivalText="Arrives privately to their Paayee wallet"
       defaultSendAsset={defaultStableAsset}
       fallbackRecipient={defaultHandleRecipient}

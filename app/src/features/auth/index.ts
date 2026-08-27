@@ -18,6 +18,7 @@ export {
 export { SessionGuard } from './session-guard';
 export {
   clearSessionLock,
+  completePrivySignIn,
   getBiometricsEnabled,
   hasReturningUser,
   isSessionLocked,

@@ -11,6 +11,7 @@ import {
   getPaayeePrivateOperationEnvelope,
   type PaayeePrivateOperationEnvelope,
 } from '@/features/confidential/confidential-money';
+import { getPaayeeWalletAddress } from '@/features/confidential/zama-mobile-runtime';
 import { FooterButton } from '@/features/send/flows/shared/send-ui';
 import { sendStyles as styles } from '@/features/send/send-screen.styles';
 
@@ -33,7 +34,7 @@ export function OperationSuccessScreen() {
   const kind = readParam(params.kind) ?? 'deposit';
   const title = readParam(params.title) ?? 'Your money is on its way';
   const amount = readParam(params.amount);
-  const asset = readParam(params.asset) ?? 'NGN';
+  const asset = readParam(params.asset) ?? inferAsset(title, amount);
   const [privateEnvelope, setPrivateEnvelope] = useState<PaayeePrivateOperationEnvelope>();
 
   useEffect(() => {
@@ -41,7 +42,10 @@ export function OperationSuccessScreen() {
       return;
     }
 
-    void getPaayeePrivateOperationEnvelope(privateEnvelopeId).then(setPrivateEnvelope);
+    void getPaayeeWalletAddress()
+      .then((ownerAddress) => getPaayeePrivateOperationEnvelope(privateEnvelopeId, ownerAddress))
+      .then(setPrivateEnvelope)
+      .catch(() => setPrivateEnvelope(undefined));
   }, [privateEnvelopeId]);
 
   const receiptHref = transactionId
@@ -50,6 +54,7 @@ export function OperationSuccessScreen() {
       }${privateEnvelopeId ? `&privateEnvelopeId=${encodeURIComponent(privateEnvelopeId)}` : ''}&returnTo=home` as Href)
     : undefined;
   const detailText = createDetailText({ amount, asset, kind, privateEnvelope, status });
+  const canMakePrivate = kind === 'deposit' && (asset === 'USDC' || asset === 'USDT');
 
   return (
     <View style={styles.screen}>
@@ -74,8 +79,21 @@ export function OperationSuccessScreen() {
         </View>
 
         <View style={styles.successFooter}>
-          <FooterButton label="Okay, got it" onPress={() => router.replace('/' as Href)} />
-          {receiptHref ? (
+          <FooterButton
+            label={canMakePrivate ? 'Make private' : 'Okay, got it'}
+            onPress={() => {
+              if (canMakePrivate) {
+                router.replace(`/asset/${asset.toLowerCase()}?action=shield` as Href);
+                return;
+              }
+              router.replace('/' as Href);
+            }}
+          />
+          {canMakePrivate ? (
+            <PressableScale onPress={() => router.replace('/' as Href)} style={styles.outlineButton}>
+              <Text style={styles.outlineButtonText}>Keep Spendable</Text>
+            </PressableScale>
+          ) : receiptHref ? (
             <PressableScale onPress={() => router.push(receiptHref)} style={styles.outlineButton}>
               <Text style={styles.outlineButtonText}>View receipt</Text>
             </PressableScale>
@@ -105,9 +123,17 @@ function createDetailText({
 }) {
   if (kind === 'private-send') {
     const amountText = privateEnvelope?.amountDisplay ?? amount;
+    const recipientText = privateEnvelope?.recipientHandle
+      ? ` to @${privateEnvelope.recipientHandle.replace(/^@+/, '')}`
+      : '';
+
+    if (status === 'succeeded') {
+      return `${amountText ?? 'Your transfer'} was sent privately${recipientText}.`;
+    }
+
     const statusText = status ? ` Status: ${formatStatus(status)}.` : '';
 
-    return `${amountText ? `${amountText} ` : ''}is prepared as a private Paayee confidential-token operation.${statusText}`;
+    return `${amountText ? `${amountText} ` : ''}was submitted as a private transfer${recipientText}.${statusText}`;
   }
 
   if (kind === 'private-conversion') {
@@ -128,19 +154,34 @@ function createDetailText({
     return `${amountText}has been verified by Klyde and is moving into your private Paayee balance.`;
   }
 
+  if (kind === 'private-receive') {
+    return `A private ${asset} transfer was confirmed. Open the receipt whenever you want to reveal its amount.`;
+  }
+
   if (!amount) {
     return undefined;
   }
 
   if (kind === 'send') {
-    return `${amount} is on its way. Your receipt is ready while we finish confirmation.`;
+    return `${amount} was submitted. Your receipt will show the final confirmation status.`;
   }
 
   if (kind === 'conversion') {
     return `${amount} has been converted. Your receipt is ready while we finish confirmation.`;
   }
 
-  return `${amount} is being added to your ${asset} balance. Your receipt is ready while we finish confirmation.`;
+  if (kind === 'deposit') {
+    return `${amount} was received in your public ${asset} balance.`;
+  }
+
+  return `${amount} was added to your ${asset} balance.`;
+}
+
+function inferAsset(title: string, amount?: string): string {
+  const text = `${title} ${amount ?? ''}`.toUpperCase();
+  if (text.includes('USDC')) return 'USDC';
+  if (text.includes('USDT')) return 'USDT';
+  return 'NGN';
 }
 
 function formatStatus(status: string): string {

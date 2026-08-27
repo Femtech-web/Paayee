@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { runtimeConfig } from '@/config/runtime';
 import {
-  getKlydeRates,
   getKlydeWalletSnapshot,
   listKlydeConfidentialOperations,
   listKlydeConversions,
@@ -19,19 +18,29 @@ import {
   type KlydeWalletSnapshot,
   type MoneyAmount,
 } from '@/integrations/klyde/client';
-import { getKlydeConfig } from '@/integrations/klyde/env';
 import {
+  clearPaayeeConfidentialBalanceCache,
   getPaayeeConfidentialBalanceDisplay,
+  revealPaayeeConfidentialBalances,
   listPaayeePrivateOperationEnvelopes,
   isStablecoinAsset,
   type PaayeePrivateOperationEnvelope,
 } from '@/features/confidential/confidential-money';
+import { getPaayeePublicTokenBalance } from '@/features/confidential/zama-mobile-runtime';
 import {
   getCurrentProfile,
   listCurrentBeneficiaries,
   type PaayeeBeneficiary,
   type PaayeeProfile,
 } from '@/integrations/supabase';
+import {
+  getPaayeeChainActivity,
+  getPaayeeRates,
+  type PaayeeDeposit,
+  type PaayeeOperation,
+  type PaayeePrivateTransfer,
+  type PaayeeReceipt,
+} from '@/integrations/paayee';
 import { getDisplayCurrencyPreference, type DisplayCurrency } from '@/features/preferences/display-currency-preference';
 
 export type AppProfile = {
@@ -57,6 +66,8 @@ export type AppBalance = {
   label: string;
   name: string;
   numericAmount: number;
+  privateNumericAmount?: number;
+  publicNumericAmount?: number;
 };
 
 export type AppRecipient = {
@@ -81,7 +92,7 @@ export type AppTransaction = {
   icon?: 'arrow-down-left' | 'eye' | 'repeat' | 'shield' | 'trending-up';
   id: string;
   initials?: string;
-  kind: KlydeTransaction['kind'] | 'conversion' | 'private-send' | 'private-conversion';
+  kind: KlydeTransaction['kind'] | 'conversion' | 'private-send' | 'private-conversion' | 'private-receive' | 'shield' | 'unshield' | 'send';
   privateEnvelopeId?: string;
   receiptId?: string;
   secondaryAmount?: string;
@@ -104,12 +115,16 @@ export type AppDataState = {
   data?: AppData;
   error?: string;
   loading: boolean;
-  refresh: (options?: { silent?: boolean }) => Promise<void>;
+  refresh: (options?: {
+    revealPrivateAssetCodes?: ('USDC' | 'USDT')[];
+    revealPrivateBalances?: boolean;
+    silent?: boolean;
+  }) => Promise<void>;
 };
 
 const emptyProfile: AppProfile = {
   email: '',
-  firstName: 'there',
+  firstName: '',
   initials: 'PY',
   lastName: '',
   name: 'Paayee user',
@@ -123,6 +138,8 @@ const emptyBalances: AppBalance[] = [
     label: 'Local transfer balance',
     name: 'Nigerian Naira',
     numericAmount: 0,
+    privateNumericAmount: 0,
+    publicNumericAmount: 0,
   },
   {
     code: 'USDC',
@@ -131,6 +148,8 @@ const emptyBalances: AppBalance[] = [
     label: 'Private dollar balance',
     name: 'USD Coin',
     numericAmount: 0,
+    privateNumericAmount: 0,
+    publicNumericAmount: 0,
   },
   {
     code: 'USDT',
@@ -139,11 +158,14 @@ const emptyBalances: AppBalance[] = [
     label: 'Private tether balance',
     name: 'Tether USD',
     numericAmount: 0,
+    privateNumericAmount: 0,
+    publicNumericAmount: 0,
   },
 ];
 
 const supportedBalanceCodes = ['NGN', 'USDC', 'USDT'] as const;
 type SupportedBalanceCode = (typeof supportedBalanceCodes)[number];
+const privateTransferFingerprintByWallet = new Map<string, string>();
 
 export function useAppData(): AppDataState {
   const [data, setData] = useState<AppData>();
@@ -152,7 +174,11 @@ export function useAppData(): AppDataState {
   const hasLoadedInitialData = useRef(false);
   const refreshInFlight = useRef<Promise<void> | undefined>(undefined);
 
-  const refresh = useCallback(async (options: { silent?: boolean } = {}) => {
+  const refresh = useCallback(async (options: {
+    revealPrivateAssetCodes?: ('USDC' | 'USDT')[];
+    revealPrivateBalances?: boolean;
+    silent?: boolean;
+  } = {}) => {
     if (refreshInFlight.current) {
       return refreshInFlight.current;
     }
@@ -164,7 +190,10 @@ export function useAppData(): AppDataState {
       setError(undefined);
 
       try {
-        setData(await loadAppData());
+        setData(await loadAppData({
+          revealPrivateAssetCodes: options.revealPrivateAssetCodes,
+          revealPrivateBalances: options.revealPrivateBalances,
+        }));
       } catch (fetchError) {
         setData(createEmptyAppData());
         setError(fetchError instanceof Error ? fetchError.message : 'Could not load account data.');
@@ -222,7 +251,7 @@ export function useAppData(): AppDataState {
   );
 
   useEffect(() => {
-    if (!runtimeConfig.realIntegrationsEnabled) {
+    if (!runtimeConfig.paayeeApiUrl && !runtimeConfig.zamaMobileRuntimeEnabled) {
       return;
     }
 
@@ -230,7 +259,7 @@ export function useAppData(): AppDataState {
       if (hasLoadedInitialData.current) {
         void refresh({ silent: true });
       }
-    }, 15_000);
+    }, 10_000);
 
     return () => clearInterval(interval);
   }, [refresh]);
@@ -246,8 +275,12 @@ export function useAppData(): AppDataState {
   );
 }
 
-async function loadAppData(): Promise<AppData> {
+async function loadAppData(options: {
+  revealPrivateAssetCodes?: ('USDC' | 'USDT')[];
+  revealPrivateBalances?: boolean;
+} = {}): Promise<AppData> {
   const displayCurrency = await getDisplayCurrencyPreference();
+  const legacyMoneyRailEnabled = runtimeConfig.legacyMoneyRailEnabled;
   const [
     profile,
     beneficiaries,
@@ -258,26 +291,79 @@ async function loadAppData(): Promise<AppData> {
     privateOperations,
     confidentialOperations,
     rates,
+    chainActivity,
   ] = await Promise.all([
     getCurrentProfile(),
     listCurrentBeneficiaries(),
-    getKlydeWalletSnapshot({ baseCurrency: displayCurrency }).catch(() => undefined),
-    listKlydeTransactions({ page: 1, pageSize: 10 }).catch(() => undefined),
-    listKlydeConversions({ page: 1, pageSize: 10 }).catch(() => undefined),
-    listKlydeRecentRecipients({ limit: 10 }).catch(() => []),
+    legacyMoneyRailEnabled
+      ? getKlydeWalletSnapshot({ baseCurrency: displayCurrency }).catch(() => undefined)
+      : undefined,
+    legacyMoneyRailEnabled
+      ? listKlydeTransactions({ page: 1, pageSize: 10 }).catch(() => undefined)
+      : undefined,
+    legacyMoneyRailEnabled
+      ? listKlydeConversions({ page: 1, pageSize: 10 }).catch(() => undefined)
+      : undefined,
+    legacyMoneyRailEnabled ? listKlydeRecentRecipients({ limit: 10 }).catch(() => []) : [],
     listPaayeePrivateOperationEnvelopes({ hydrate: false }).catch(() => []),
-    listKlydeConfidentialOperations({ page: 1, pageSize: 50 }).catch(() => []),
-    getKlydeRates({ baseCurrency: 'NGN', currencies: ['USD', 'USDC', 'USDT'] }).catch(() => undefined),
+    legacyMoneyRailEnabled
+      ? listKlydeConfidentialOperations({ page: 1, pageSize: 50 }).catch(() => [])
+      : [],
+    getPaayeeRates('NGN').catch(() => undefined),
+    getPaayeeChainActivity().catch(() => ({ deposits: [], operations: [], privateTransfers: [], receipts: [] })),
   ]);
-  const balances = await applyConfidentialBalanceDisplays(
+  const wallet = klydeSnapshot?.wallet ?? createProfileWallet(profile);
+  synchronizePrivateTransferBalanceCache(wallet?.address, chainActivity.privateTransfers ?? []);
+  const ownedPrivateOperations = wallet?.address
+    ? privateOperations.filter((envelope) => {
+        const ownerAddress = envelope.ownerAddress ?? envelope.fromAddress;
+        return ownerAddress?.toLowerCase() === wallet.address.toLowerCase();
+      })
+    : [];
+  if (options.revealPrivateBalances) {
+    await revealPaayeeConfidentialBalances({
+      assetCodes: options.revealPrivateAssetCodes ?? ['USDC', 'USDT'],
+      chainId: runtimeConfig.zamaChainId,
+      owner: wallet?.address,
+    }).catch((revealError) => {
+      if (__DEV__) console.warn('[paayee.confidential.balance]', {
+        event: 'zama_batch_balance_failed',
+        message: revealError instanceof Error ? revealError.message : String(revealError),
+      });
+    });
+  }
+  const privateBalances = await applyConfidentialBalanceDisplays(
     normalizeBalances(klydeSnapshot?.balances),
-    klydeSnapshot?.wallet,
+    wallet,
     confidentialOperations,
+  );
+  const balances = await applyPublicStablecoinBalances(privateBalances, wallet);
+  const receiptByDepositId = new Map(
+    (chainActivity.receipts ?? [])
+      .filter((receipt) => receipt.deposit_id)
+      .map((receipt) => [receipt.deposit_id as string, receipt]),
+  );
+  const receiptByOperationId = new Map(
+    (chainActivity.receipts ?? [])
+      .filter((receipt) => receipt.operation_id)
+      .map((receipt) => [receipt.operation_id as string, receipt]),
+  );
+  const receiptByPrivateTransferId = new Map(
+    (chainActivity.receipts ?? [])
+      .filter((receipt) => receipt.private_transfer_id)
+      .map((receipt) => [receipt.private_transfer_id as string, receipt]),
   );
   const transactions = [
     ...(klydeTransactions?.data.map(normalizeTransaction) ?? []),
     ...(klydeConversions?.data.map(normalizeConversion) ?? []),
-    ...privateOperations.map(normalizePrivateOperation),
+    ...ownedPrivateOperations.map(normalizePrivateOperation),
+    ...chainActivity.deposits.map((deposit) => normalizePaayeeDeposit(deposit, receiptByDepositId.get(deposit.id))),
+    ...chainActivity.operations
+      .filter((operation) => !ownedPrivateOperations.some((envelope) =>
+        Boolean(envelope.transactionHash) && envelope.transactionHash?.toLowerCase() === operation.transaction_hash.toLowerCase()))
+      .map((operation) => normalizePaayeeOperation(operation, receiptByOperationId.get(operation.id))),
+    ...(chainActivity.privateTransfers ?? []).map((transfer) =>
+      normalizePaayeePrivateTransfer(transfer, receiptByPrivateTransferId.get(transfer.id))),
   ]
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .slice(0, 20);
@@ -289,11 +375,110 @@ async function loadAppData(): Promise<AppData> {
   return {
     balances,
     displayCurrency,
-    profile: normalizeProfile(profile, klydeSnapshot?.wallet),
+    profile: normalizeProfile(profile, wallet),
     recipients,
     totalDisplay: createTotalDisplay(balances, displayCurrency, klydeSnapshot?.valuation, rates),
     transactions,
-    wallet: klydeSnapshot?.wallet,
+    wallet,
+  };
+}
+
+function synchronizePrivateTransferBalanceCache(
+  walletAddress: string | undefined,
+  transfers: PaayeePrivateTransfer[],
+) {
+  if (!walletAddress) return;
+  const walletKey = walletAddress.toLowerCase();
+  const fingerprint = transfers
+    .slice(0, 10)
+    .map((transfer) => `${transfer.id}:${transfer.status}`)
+    .join('|');
+  const previous = privateTransferFingerprintByWallet.get(walletKey);
+  privateTransferFingerprintByWallet.set(walletKey, fingerprint);
+  if (previous === undefined || previous === fingerprint) return;
+  for (const assetCode of new Set(transfers.map((transfer) => transfer.token_symbol))) {
+    clearPaayeeConfidentialBalanceCache({
+      assetCode,
+      chainId: runtimeConfig.zamaChainId,
+      owner: walletAddress,
+    });
+  }
+}
+
+function normalizePaayeePrivateTransfer(
+  transfer: PaayeePrivateTransfer,
+  receipt?: PaayeeReceipt,
+): AppTransaction {
+  return {
+    amount: 'Private amount',
+    createdAt: transfer.created_at,
+    detail: transfer.status === 'confirmed'
+      ? `Confirmed · ${transfer.sender_handle ? `From ${transfer.sender_handle}` : 'Private balance updated'}`
+      : `${transfer.confirmations} confirmation${transfer.confirmations === 1 ? '' : 's'}`,
+    icon: 'shield',
+    id: `private-transfer:${transfer.id}`,
+    kind: 'private-receive',
+    receiptId: receipt?.id,
+    title: transfer.sender_handle
+      ? `Private ${transfer.token_symbol} from ${transfer.sender_handle}`
+      : `Private ${transfer.token_symbol} received`,
+    tone: 'positive',
+    when: formatTransactionDate(transfer.created_at),
+  };
+}
+
+function normalizePaayeeDeposit(deposit: PaayeeDeposit, receipt?: PaayeeReceipt): AppTransaction {
+  return {
+    amount: `+${formatStablecoinMinorUnits(deposit.amount_minor_units, deposit.token_symbol)}`,
+    createdAt: deposit.created_at,
+    detail: deposit.status === 'confirmed'
+      ? 'Confirmed · Ready to make private'
+      : `${deposit.confirmations} confirmation${deposit.confirmations === 1 ? '' : 's'}`,
+    icon: 'arrow-down-left',
+    id: `deposit:${deposit.id}`,
+    kind: 'deposit',
+    receiptId: receipt?.id,
+    title: `${deposit.token_symbol} received`,
+    tone: 'positive',
+    when: formatTransactionDate(deposit.created_at),
+  };
+}
+
+function normalizePaayeeOperation(operation: PaayeeOperation, receipt?: PaayeeReceipt): AppTransaction {
+  const isShield = operation.kind === 'shield';
+  const isSend = operation.kind === 'public_send';
+  return {
+    amount: `${isSend ? '-' : ''}${formatStablecoinMinorUnits(operation.amount_minor_units, operation.token_symbol)}`,
+    createdAt: operation.created_at,
+    detail: `${titleCase(operation.status)} · ${isSend ? 'Spendable transfer' : isShield ? 'Public to private' : 'Private to public'}`,
+    icon: isSend ? 'trending-up' : 'shield',
+    id: `operation:${operation.id}`,
+    kind: isSend ? 'send' : isShield ? 'shield' : 'unshield',
+    receiptId: receipt?.id,
+    title: isSend ? `${operation.token_symbol} sent` : isShield ? `${operation.token_symbol} made private` : `${operation.token_symbol} moved to public`,
+    tone: 'receipt',
+    when: formatTransactionDate(operation.created_at),
+  };
+}
+
+function formatStablecoinMinorUnits(value: string, symbol: string): string {
+  const amount = Number(value) / 1_000_000;
+  return `${amount.toLocaleString(undefined, { maximumFractionDigits: 6, minimumFractionDigits: 2 })} ${symbol}`;
+}
+
+function createProfileWallet(profile?: PaayeeProfile): KlydeWallet | undefined {
+  if (!profile?.smartAccountAddress) {
+    return undefined;
+  }
+
+  return {
+    address: profile.smartAccountAddress,
+    appId: 'paayee',
+    chainId: runtimeConfig.zamaChainId,
+    createdAt: new Date(0).toISOString(),
+    id: profile.privyUserId ?? profile.smartAccountAddress,
+    kind: 'embedded',
+    userId: profile.privyUserId ?? profile.id,
   };
 }
 
@@ -309,7 +494,7 @@ function createEmptyAppData(): AppData {
 }
 
 function normalizeProfile(profile?: PaayeeProfile, wallet?: KlydeWallet): AppProfile {
-  const firstName = cleanNamePart(profile?.firstName) || 'there';
+  const firstName = cleanNamePart(profile?.firstName);
   const lastName = cleanNamePart(profile?.lastName);
   const fullName = [firstName, cleanNamePart(profile?.middleName), lastName].filter(Boolean).join(' ');
   const email = profile?.email?.trim() ?? '';
@@ -402,6 +587,7 @@ function normalizeBalances(klydeBalances?: KlydeBalance[]): AppBalance[] {
       ...emptyBalance,
       displayAmount: formatMoneyAmount(balance.total),
       numericAmount: parseMoneyAmount(balance.total),
+      privateNumericAmount: parseMoneyAmount(balance.total),
     };
   });
 }
@@ -412,7 +598,7 @@ async function applyConfidentialBalanceDisplays(
   confidentialOperations: KlydeConfidentialOperation[] = [],
 ): Promise<AppBalance[]> {
   const owner = wallet?.address;
-  const chainId = getKlydeConfig().environment === 'production' ? 11155111 : 31337;
+  const chainId = runtimeConfig.zamaChainId;
   const confidentialBalances = await Promise.all(
     balances.map(async (balance) => {
       if (!isStablecoinAsset(balance.code)) {
@@ -423,6 +609,7 @@ async function applyConfidentialBalanceDisplays(
         assetCode: balance.code,
         chainId,
         confidentialOperations,
+        decrypt: false,
         hasOperationHistory: hasConfidentialOperationHistory(confidentialOperations, balance.code),
         owner,
       });
@@ -434,6 +621,7 @@ async function applyConfidentialBalanceDisplays(
           confidentialityStatus: privateBalance.status,
           displayAmount: privateBalance.displayAmount,
           numericAmount: parsePrivateStablecoinDisplay(privateBalance.displayAmount, balance.numericAmount),
+          privateNumericAmount: parsePrivateStablecoinDisplay(privateBalance.displayAmount, balance.numericAmount),
         };
       }
 
@@ -444,6 +632,7 @@ async function applyConfidentialBalanceDisplays(
           confidentialityStatus: privateBalance.status,
           displayAmount: '$••••',
           numericAmount: 0,
+          privateNumericAmount: 0,
         };
       }
 
@@ -452,11 +641,35 @@ async function applyConfidentialBalanceDisplays(
         confidentialityStatus: privateBalance.status,
         displayAmount: privateBalance.displayAmount ?? '$••••',
         numericAmount: 0,
+        privateNumericAmount: 0,
       };
     }),
   );
 
   return confidentialBalances;
+}
+
+async function applyPublicStablecoinBalances(
+  balances: AppBalance[],
+  wallet?: KlydeWallet,
+): Promise<AppBalance[]> {
+  if (!wallet?.address) return balances;
+  return Promise.all(balances.map(async (balance) => {
+    if (!isStablecoinAsset(balance.code)) return balance;
+    const tokenAddress = balance.code === 'USDC'
+      ? '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'
+      : '0x93C5d30a7509E60871B77A3548a5BD913334cd35';
+    try {
+      const value = await getPaayeePublicTokenBalance({
+        chainId: runtimeConfig.zamaChainId,
+        owner: wallet.address,
+        tokenAddress,
+      });
+      return { ...balance, publicNumericAmount: Number(value) / 1_000_000 };
+    } catch {
+      return balance;
+    }
+  }));
 }
 
 function hasConfidentialOperationHistory(
@@ -654,7 +867,7 @@ function createPrivateTotalDisplay(
     const ngnAsUsd = usdRate ? ngnAmount * usdRate : 0;
     const stablecoinTotal = balances
       .filter((balance) => isStablecoinAssetCode(balance.code))
-      .reduce((total, balance) => total + balance.numericAmount, 0);
+      .reduce((total, balance) => total + balance.numericAmount + (balance.publicNumericAmount ?? 0), 0);
 
     return formatDisplayNumber(stablecoinTotal + ngnAsUsd, '$');
   }
@@ -670,7 +883,7 @@ function createStablecoinLocalValue(balances: AppBalance[], rates?: KlydeRates):
     .reduce((total, balance) => {
       const rate = getRateFromBaseCurrency(rates, balance.code) ?? getRateFromBaseCurrency(rates, 'USD');
 
-      return total + (rate ? balance.numericAmount / rate : 0);
+      return total + (rate ? (balance.numericAmount + (balance.publicNumericAmount ?? 0)) / rate : 0);
     }, 0);
 }
 

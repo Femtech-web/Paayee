@@ -19,6 +19,7 @@ export type BankOption = {
 };
 
 export type SendAssetCode = 'NGN' | 'USDC' | 'USDT';
+export type StablecoinBalanceSource = 'public' | 'private';
 
 export type SendAssetOption = {
   balance: string;
@@ -108,7 +109,10 @@ export const fallbackHandleRecipient: SendRecipient = {
   name: 'Recipient',
 };
 
-export function createSendAssetOptionsFromBalances(balances?: AppBalance[]): SendAssetOption[] {
+export function createSendAssetOptionsFromBalances(
+  balances?: AppBalance[],
+  balanceSource: StablecoinBalanceSource = 'private',
+): SendAssetOption[] {
   if (!balances?.length) {
     return sendAssetOptions;
   }
@@ -118,6 +122,16 @@ export function createSendAssetOptionsFromBalances(balances?: AppBalance[]): Sen
 
     if (!balance) {
       return asset;
+    }
+
+    if (asset.code !== 'NGN' && balanceSource === 'public') {
+      return {
+        ...asset,
+        balance: String(balance.publicNumericAmount ?? 0),
+        balanceUnavailable: false,
+        confidentialityStatus: balance.confidentialityStatus,
+        name: balance.name,
+      };
     }
 
     return {

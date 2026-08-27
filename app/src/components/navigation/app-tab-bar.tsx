@@ -8,9 +8,11 @@ import { Colors, Fonts } from '@/constants/theme';
 const tabs = [
   { href: '/', label: 'Home', icon: 'home' },
   { href: '/people', label: 'People', icon: 'users' },
-  { href: '/transactions', label: 'Transactions', icon: 'trending-up' },
+  { href: '/transactions', label: 'Transactions', icon: 'list' },
   { href: '/profile', label: 'More', icon: 'more-horizontal' },
 ] as const;
+
+type TabIconName = (typeof tabs)[number]['icon'];
 
 export function AppTabBar() {
   const pathname = usePathname();
@@ -47,11 +49,7 @@ export function AppTabBar() {
                   accessibilityState={{ selected: active }}
                   onPress={() => router.push(tab.href)}
                   style={[styles.item, active && styles.itemActive]}>
-                  <Feather
-                    name={tab.icon}
-                    size={19}
-                    color={active ? Colors.light.primary : '#191714'}
-                  />
+                  <PaayeeTabIcon active={active} name={tab.icon} />
                   <Text style={[styles.label, active && styles.labelActive]} numberOfLines={1}>
                     {tab.label}
                   </Text>
@@ -61,6 +59,14 @@ export function AppTabBar() {
           })}
         </GlassView>
       </View>
+    </View>
+  );
+}
+
+function PaayeeTabIcon({ active, name }: { active: boolean; name: TabIconName }) {
+  return (
+    <View style={styles.iconWrap}>
+      <Feather color={active ? Colors.light.primary : '#3F3B36'} name={name} size={22} />
     </View>
   );
 }
@@ -113,12 +119,16 @@ const styles = StyleSheet.create({
     borderRadius: 27,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 3,
   },
   itemActive: {
-    backgroundColor: 'rgba(233, 231, 227, 0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.56)',
+    backgroundColor: 'rgba(255, 122, 26, 0.065)',
+  },
+  iconWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 27,
+    width: 30,
   },
   label: {
     color: '#191714',

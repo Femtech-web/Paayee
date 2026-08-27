@@ -14,7 +14,7 @@ export type AssetDetail = {
   receiveTitle: string;
   receiveSubtitle: string;
   depositNote: string;
-  address?: string;
+  publicTokenAddress?: string;
   networks?: AssetNetwork[];
 };
 
@@ -37,10 +37,10 @@ export const assetDetails: Record<AssetCode, AssetDetail> = {
     balanceLabel: 'Your USDC balance',
     balance: '$0.00',
     receiveTitle: 'Receive USDC',
-    receiveSubtitle: 'Fund your private USDC balance',
+    receiveSubtitle: 'Fund your public USDC balance, then make it private when ready',
     depositNote:
-      'Only send USDC on Sepolia to this address. Paayee will credit the private balance after confirmation.',
-    address: '0xE7f8AAb397c71a13cB84E860AD9cBd241665085D',
+      'Only send Sepolia USDC to this Privy wallet. Shielding it into private cUSDC is a separate onchain step.',
+    publicTokenAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
     networks: [{ label: 'Sepolia', selected: true }],
   },
   usdt: {
@@ -50,10 +50,10 @@ export const assetDetails: Record<AssetCode, AssetDetail> = {
     balanceLabel: 'Your USDT balance',
     balance: '$0.00',
     receiveTitle: 'Receive USDT',
-    receiveSubtitle: 'Fund your private USDT balance',
+    receiveSubtitle: 'Fund your public USDT balance, then make it private when ready',
     depositNote:
-      'Only send USDT on Sepolia to this address. Paayee will credit the private balance after confirmation.',
-    address: '0x7Ab6649B81a1c6dd03f2EC52ED430BeB93606AEc',
+      'Only send Paayee Sepolia USDT to this Privy wallet. Shielding it into private cUSDT is a separate onchain step.',
+    publicTokenAddress: '0x93C5d30a7509E60871B77A3548a5BD913334cd35',
     networks: [{ label: 'Sepolia', selected: true }],
   },
 };

@@ -86,6 +86,9 @@ export const addMoneyStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
   },
+  methodRowDisabled: {
+    opacity: 0.82,
+  },
   methodIcon: {
     width: 58,
     height: 58,
@@ -94,14 +97,37 @@ export const addMoneyStyles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#FFF3E8',
   },
+  methodIconDisabled: {
+    backgroundColor: '#F2F1EF',
+  },
   methodCopy: {
     flex: 1,
     minWidth: 0,
+  },
+  methodTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   methodTitle: {
     color: '#202633',
     fontFamily: Fonts.demi,
     fontSize: 18,
+  },
+  methodTitleDisabled: {
+    color: '#777D88',
+  },
+  methodBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    backgroundColor: '#FFF1E6',
+  },
+  methodBadgeText: {
+    color: Colors.light.primary,
+    fontFamily: Fonts.demi,
+    fontSize: 11,
+    lineHeight: 13,
   },
   methodText: {
     marginTop: 4,

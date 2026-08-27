@@ -8,9 +8,11 @@
     "scheme": "paayee",
     "userInterfaceStyle": "light",
     "ios": {
+      "bundleIdentifier": "org.paayee.app",
       "icon": "./assets/brand/paayee-app-icon.png"
     },
     "android": {
+      "package": "org.paayee.app",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/brand/paayee-app-icon.png",
@@ -45,6 +47,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "57db3caa-3b8e-4c17-b878-0c5178a61ed3"
+      }
+    },
+    "owner": "oluwafemiakolade"
   }
 }

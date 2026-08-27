@@ -4,13 +4,15 @@ import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { FadeInView } from '@/components/motion/fade-in-view';
+import { readPaayeeWalletError } from '@/features/confidential/wallet-errors';
 import {
   stablecoinNetworks,
   transferPurposes,
   type SendAssetCode,
+  type StablecoinBalanceSource,
 } from '../../send-data';
 import { sendStyles as styles } from '../../send-screen.styles';
-import { createLiveSend, isPrivateSendResult, type LiveSendMethod } from '../../send-live';
+import { createLiveSend, isPaayeeStablecoinSendResult, isPrivateSendResult, type LiveSendMethod } from '../../send-live';
 import { ScreenShell, TopBar } from './send-layout';
 import { FieldLabel, FooterButton, RecipientHeader, SummaryRow } from './send-ui';
 import { findAsset, formatMoney, readParam } from './send-utils';
@@ -25,11 +27,13 @@ export function ReviewSendScreen() {
     asset?: SendAssetCode;
     fee?: string;
     networkId?: string;
+    source?: StablecoinBalanceSource;
   }>();
   const amount = Number(params.amount ?? 5000);
   const fee = Number(params.fee ?? 35);
   const asset = findAsset(readParam(params.asset) as SendAssetCode | undefined);
   const network = stablecoinNetworks.find((item) => item.id === readParam(params.networkId));
+  const balanceSource = readParam(params.source) === 'public' ? 'public' : 'private';
   const [purpose, setPurpose] = useState<(typeof transferPurposes)[number]>('General');
   const [purposeOpen, setPurposeOpen] = useState(false);
   const [narration, setNarration] = useState('');
@@ -49,6 +53,7 @@ export function ReviewSendScreen() {
       const liveSend = await createLiveSend({
         amount,
         assetCode: asset.code,
+        balanceSource,
         method,
         narration,
         network,
@@ -58,14 +63,28 @@ export function ReviewSendScreen() {
 
       if (liveSend) {
         if (isPrivateSendResult(liveSend)) {
+          const successTitle = liveSend.operation.status === 'succeeded'
+            ? 'Private transfer sent'
+            : 'Private transfer submitted';
           router.replace(
-            `/operation-success?title=${encodeURIComponent('Private transfer prepared')}&asset=${encodeURIComponent(
+            `/operation-success?title=${encodeURIComponent(successTitle)}&asset=${encodeURIComponent(
               asset.code,
             )}&amount=${encodeURIComponent(formatMoney(amount, asset))}&kind=private-send&transactionId=${encodeURIComponent(
               liveSend.operation.id,
             )}&privateEnvelopeId=${encodeURIComponent(liveSend.envelope.id)}&status=${encodeURIComponent(
               liveSend.operation.status,
             )}` as const,
+          );
+          return;
+        }
+
+        if (isPaayeeStablecoinSendResult(liveSend)) {
+          router.replace(
+            `/operation-success?title=${encodeURIComponent('Transfer sent')}&asset=${encodeURIComponent(
+              asset.code,
+            )}&amount=${encodeURIComponent(formatMoney(amount, asset))}&kind=send&transactionId=${encodeURIComponent(
+              liveSend.activityOperation?.id ?? liveSend.transactionHash,
+            )}&status=submitted` as const,
           );
           return;
         }
@@ -87,7 +106,7 @@ export function ReviewSendScreen() {
 
       router.replace('/send/success');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not complete this transfer.');
+      setErrorMessage(readPaayeeWalletError(error, 'Could not complete this transfer. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -99,6 +118,9 @@ export function ReviewSendScreen() {
       <FadeInView delay={70} style={styles.reviewPanel}>
         <RecipientHeader recipient={recipient} />
         <View style={styles.reviewDivider} />
+        {(asset.code === 'USDC' || asset.code === 'USDT') ? (
+          <SummaryRow label="Paying from" value={balanceSource === 'private' ? 'Private balance' : 'Spendable balance'} />
+        ) : null}
         <SummaryRow label="Amount tendered" value={formatMoney(amount + fee, asset)} />
         <SummaryRow label="Total fees" value={formatMoney(fee, asset)} />
         <SummaryRow label="Recipient will receive" value={formatMoney(amount, asset)} />

@@ -87,36 +87,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       cUSDT: cUSDT.address
     },
     registry: registry.address,
-    klydePrivacyConfig: {
-      mode: "klyde_managed",
-      allowAppManagedAssets: true,
-      defaultAssets: {}
-    },
-    activeRail: "klyde_managed",
-    klydeRegistrationPayloads: [
-      {
-        chainId,
-        tokenAddress: cUSDC.address,
-        symbol: "cUSDC",
-        underlyingSymbol: "USDC",
-        underlyingTokenAddress: usdcAddress,
-        mode: "app_managed",
-        erc7984: true,
-        isDefault: false,
-        registryAddress: registry.address
-      },
-      {
-        chainId,
-        tokenAddress: cUSDT.address,
-        symbol: "cUSDT",
-        underlyingSymbol: "USDT",
-        underlyingTokenAddress: usdtAddress,
-        mode: "app_managed",
-        erc7984: true,
-        isDefault: false,
-        registryAddress: registry.address
-      }
-    ]
+    activeRail: "app_managed"
   };
 
   const outputPath = path.join(__dirname, "..", `paayee-confidential-assets.${hre.network.name}.json`);
@@ -125,7 +96,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`Paayee cUSDC: ${cUSDC.address}`);
   console.log(`Paayee cUSDT: ${cUSDT.address}`);
   console.log(`Paayee confidential registry: ${registry.address}`);
-  console.log(`Paayee Klyde registration output: ${outputPath}`);
+  console.log(`Paayee deployment output: ${outputPath}`);
 };
 
 export default func;

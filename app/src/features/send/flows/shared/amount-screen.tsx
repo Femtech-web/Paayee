@@ -1,7 +1,7 @@
 import { Feather } from '@react-native-vector-icons/feather';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { FadeInView } from '@/components/motion/fade-in-view';
 import { useAppData } from '@/features/app-data';
@@ -11,6 +11,7 @@ import {
   type SendAssetCode,
   type SendAssetOption,
   type SendRecipient,
+  type StablecoinBalanceSource,
 } from '../../send-data';
 import { sendStyles as styles } from '../../send-screen.styles';
 import { ScreenShell, TopBar } from './send-layout';
@@ -49,10 +50,12 @@ export function SharedAmountScreen({
   const router = useRouter();
   const params = useLocalSearchParams<{ networkId?: string }>();
   const recipient = useRecipientParams(fallbackRecipient);
-  const { data } = useAppData();
+  const { data, refresh } = useAppData();
+  const [balanceSource, setBalanceSource] = useState<StablecoinBalanceSource>('private');
+  const [revealingPrivateBalance, setRevealingPrivateBalance] = useState(false);
   const liveAssets = useMemo(
-    () => createSendAssetOptionsFromBalances(data?.balances),
-    [data?.balances],
+    () => createSendAssetOptionsFromBalances(data?.balances, balanceSource),
+    [balanceSource, data?.balances],
   );
   const [sendAssetCode, setSendAssetCode] = useState<SendAssetCode>(defaultSendAsset.code);
   const [receiveAssetCode, setReceiveAssetCode] = useState<SendAssetCode>(defaultSendAsset.code);
@@ -71,6 +74,14 @@ export function SharedAmountScreen({
   const remainingBalance = Math.max(numericBalance - numericTendered, 0);
   const balanceUnavailable = Boolean(sendAsset.balanceUnavailable);
   const balanceExceeded = balanceUnavailable ? numericTendered > 0 : numericTendered > numericBalance;
+  const stablecoinSelected = sendAsset.code === 'USDC' || sendAsset.code === 'USDT';
+  const selectedAppBalance = data?.balances.find((balance) => balance.code === sendAsset.code);
+  const canMovePrivateFunds = Boolean(
+    stablecoinSelected &&
+    balanceSource === 'public' &&
+    balanceExceeded &&
+    (selectedAppBalance?.privateNumericAmount ?? 0) >= numericTendered,
+  );
   const centeredTitle =
     typeof title === 'function'
       ? title(sendAsset, recipient)
@@ -84,13 +95,67 @@ export function SharedAmountScreen({
       </FadeInView>
 
       <FadeInView delay={120} style={styles.form}>
+        {stablecoinSelected ? (
+          <View style={styles.balanceSourceBlock}>
+            <Text style={styles.fieldLabel}>Pay from</Text>
+            <View accessibilityRole="tablist" style={styles.balanceSourceToggle}>
+              {(['public', 'private'] as const).map((source) => {
+                const selected = balanceSource === source;
+                return (
+                  <Pressable
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected }}
+                    key={source}
+                    onPress={() => setBalanceSource(source)}
+                    style={[styles.balanceSourceOption, selected && styles.balanceSourceOptionActive]}>
+                    <Feather
+                      name={source === 'public' ? 'globe' : 'shield'}
+                      size={17}
+                      color={selected ? '#17120E' : '#969AA4'}
+                    />
+                    <Text style={[styles.balanceSourceText, selected && styles.balanceSourceTextActive]}>
+                      {source === 'public' ? 'Spendable' : 'Private'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.balanceSourceHint}>
+              {balanceSource === 'private'
+                ? reviewPath === '/send/stablecoin/review'
+                  ? 'Sent confidentially. The receiving wallet must support this private token.'
+                  : 'The amount stays confidential between Paayee wallets.'
+                : 'A normal stablecoin transfer from your public balance.'}
+            </Text>
+            {balanceSource === 'private' && balanceUnavailable ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={revealingPrivateBalance}
+                onPress={async () => {
+                  setRevealingPrivateBalance(true);
+                  try {
+                    await refresh({ revealPrivateBalances: true, silent: true });
+                  } finally {
+                    setRevealingPrivateBalance(false);
+                  }
+                }}
+                style={styles.revealPrivateButton}>
+                <Feather name="eye" size={16} color="#17120E" />
+                <Text style={styles.revealPrivateText}>
+                  {revealingPrivateBalance ? 'Revealing…' : 'Reveal private balance'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
         <Text style={styles.fieldLabel}>Amount to send</Text>
         <View style={styles.amountCard}>
           <View style={styles.amountTop}>
             <AssetPill asset={sendAsset} onPress={() => setActiveAssetPicker('send')} />
             <TextInput
               value={tenderedAmount ? formatEditableAmount(tenderedAmount, sendAsset) : ''}
-              onChangeText={(value) => setTenderedAmount(sanitizeAmountInput(value))}
+              onChangeText={(value) => setTenderedAmount(sanitizeAmountInput(value, sendAsset.code))}
               keyboardType="decimal-pad"
               placeholder={`${sendAsset.symbol}0`}
               placeholderTextColor="#B7BDC8"
@@ -102,11 +167,22 @@ export function SharedAmountScreen({
           </Text>
         </View>
         {balanceExceeded ? (
-          <Text style={styles.errorText}>
-            {balanceUnavailable
-              ? `Decrypt your private ${sendAsset.code} balance before sending from it.`
-              : `This amount is higher than your available ${sendAsset.code} balance.`}
-          </Text>
+          <View style={styles.balanceResolutionBlock}>
+            <Text style={styles.errorText}>
+              {balanceUnavailable
+                ? `Reveal your private ${sendAsset.code} balance before sending from it.`
+                : `This amount is higher than your available ${balanceSource === 'public' ? 'Spendable' : 'Private'} ${sendAsset.code} balance.`}
+            </Text>
+            {canMovePrivateFunds ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push(`/asset/${sendAsset.code.toLowerCase()}?action=unshield` as Href)}
+                style={styles.moveFundsButton}>
+                <Feather name="unlock" size={15} color="#17120E" />
+                <Text style={styles.moveFundsText}>Move private funds to Spendable</Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
 
         <View style={styles.feeCard}>
@@ -132,7 +208,13 @@ export function SharedAmountScreen({
 
         <View style={styles.arrivalHint}>
           <Feather name="zap" size={18} color="#A0A8B7" />
-          <Text style={styles.arrivalHintText}>{arrivalText}</Text>
+          <Text style={styles.arrivalHintText}>
+            {stablecoinSelected
+              ? balanceSource === 'private'
+                ? 'Arrives in the recipient’s private balance'
+                : 'Arrives as spendable stablecoin'
+              : arrivalText}
+          </Text>
         </View>
       </FadeInView>
 
@@ -148,13 +230,14 @@ export function SharedAmountScreen({
             : '';
           const networkId = readParam(params.networkId);
           const networkQuery = networkId ? `&networkId=${encodeURIComponent(networkId)}` : '';
+          const sourceQuery = stablecoinSelected ? `&source=${balanceSource}` : '';
 
           router.push(
             `${reviewPath}?name=${encodeURIComponent(recipient.name)}&bank=${encodeURIComponent(
               recipient.bankName,
             )}&account=${encodeURIComponent(recipient.accountNumber)}&initials=${
               recipient.initials
-            }&amount=${receiveAmount}&fee=${fee}&asset=${receiveAsset.code}${walletQuery}${bankCodeQuery}${networkQuery}` as Href,
+            }&amount=${receiveAmount}&fee=${fee}&asset=${receiveAsset.code}${walletQuery}${bankCodeQuery}${networkQuery}${sourceQuery}` as Href,
           );
         }}
       />
@@ -181,11 +264,11 @@ export function SharedAmountScreen({
 export const defaultNgnAsset = sendAssetOptions[0];
 export const defaultStableAsset = sendAssetOptions[1];
 
-function sanitizeAmountInput(value: string) {
+function sanitizeAmountInput(value: string, assetCode: SendAssetCode) {
   const normalized = value.replace(/[^\d.]/g, '');
   const [rawInteger = '', ...decimalParts] = normalized.split('.');
   const integer = rawInteger.replace(/^0+(?=\d)/, '').slice(0, 9);
-  const decimals = decimalParts.join('').slice(0, 2);
+  const decimals = decimalParts.join('').slice(0, assetCode === 'NGN' ? 2 : 6);
 
   if (normalized.includes('.')) {
     return `${integer || '0'}.${decimals}`;

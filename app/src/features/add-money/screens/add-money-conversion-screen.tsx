@@ -151,6 +151,7 @@ export function AddMoneyConversionScreen() {
       : `${sourceAsset.symbol}${sourceAsset.balance}`;
   const hasEnoughSourceBalance = sourceBalanceUnavailable ? numericAmount <= 0 : numericAmount <= availableSourceBalance;
   const canSubmit =
+    runtimeConfig.paayeeConversionSettlementEnabled &&
     receiveAmount > 0 &&
     hasEnoughSourceBalance &&
     !submitting &&
@@ -435,7 +436,13 @@ export function AddMoneyConversionScreen() {
 
       <FooterButton
         disabled={!canSubmit}
-        label={submitting ? 'Converting...' : 'Continue'}
+        label={
+          submitting
+            ? 'Converting...'
+            : runtimeConfig.paayeeConversionSettlementEnabled
+              ? 'Continue'
+              : 'Settlement coming soon'
+        }
         onPress={async () => {
           setSubmitting(true);
           setErrorMessage('');

@@ -12,7 +12,6 @@ export { ProfileHomeScreen } from './profile-home-screen';
 export { RatesScreen } from './rates-screen';
 export {
   BiometricUnlockScreen,
-  ChangePasswordScreen,
   ChangePinIntroScreen,
   CurrentPinScreen,
   NewPinScreen,

@@ -25,7 +25,7 @@ function ConfirmName() {
   const router = useRouter();
   const { data } = useAppData();
   const userDetails = [
-    { label: 'First name', value: data?.profile.firstName ?? 'Not provided' },
+    { label: 'First name', value: data?.profile.firstName || 'Not provided' },
     { label: 'Last name', value: data?.profile.lastName || 'Not provided' },
     { label: 'Email', value: data?.profile.email || 'Not provided' },
   ];

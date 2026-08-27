@@ -2,6 +2,21 @@
 
 Phase 0 record for moving Paayee to app-managed confidential money rails through Klyde.
 
+## Internal Product Note: Paayee Privacy Thesis
+
+This section is an internal source for future user-facing privacy explanations. Keep the claims precise: Paayee protects confidential amounts, but it does not claim that every piece of transaction metadata is invisible.
+
+- A revealed private balance, such as `$8`, is decrypted in the user's app by the Zama runtime using authorization from the signed-in Privy wallet.
+- The blockchain, subgraph, indexer worker, and Paayee backend receive encrypted ciphertext handles for confidential amounts—not the decrypted `$8` value.
+- After an authorized reveal, the clear balance is held only in the running app's in-memory cache. It is not persisted by the indexer or backend as the authoritative private balance.
+- For a private receipt, the worker stores the encrypted transfer handle; it does not decrypt the transferred amount. When the authorized recipient opens the receipt, their app performs wallet-authorized user decryption and renders the clear amount locally.
+- Paayee handles and wallet addresses are public routing and identity metadata. The backend may resolve a sender wallet address to its public Paayee handle so a receipt can say who sent it, while the confidential amount remains encrypted.
+- Transaction hashes, contract addresses, status, timing, and the existence of an onchain interaction may remain observable. Paayee's privacy claim is about confidential monetary values and protected receipt payloads, not total network anonymity.
+
+Suggested plain-language thesis for later adaptation:
+
+> Your private amount is encrypted onchain and is revealed only in your app after your wallet authorizes it. Paayee's servers process encrypted references and transaction status, not your decrypted private balance. Public routing details, such as wallet addresses, Paayee handles, and transaction status, may still be visible.
+
 ## Decision
 
 Paayee should use Klyde `app_managed` privacy mode. Paayee will provide its own confidential token contracts, while Klyde continues to provide sessions, wallets, provider rails, funding instructions, operation tracking, receipts, and reconciliation.

@@ -1,0 +1,16 @@
+{
+  "name": "paayee-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "render": "node scripts/render-subgraph.mjs",
+    "codegen": "npm run render && graph codegen",
+    "build": "npm run render && graph build",
+    "deploy:studio": "npm run build && graph deploy ${PAAYEE_SUBGRAPH_SLUG:-paayee}",
+    "deploy:goldsky": "npm run build && goldsky subgraph deploy ${PAAYEE_GOLDSKY_NAME:-paayee-deposits}/${PAAYEE_GOLDSKY_VERSION:-1.0.0} --path ."
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.98.1",
+    "@graphprotocol/graph-ts": "^0.38.0"
+  }
+}

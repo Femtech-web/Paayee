@@ -49,7 +49,7 @@ export function ProfileDetailsScreen() {
       ) : (
         <>
           <Section title="Personal details">
-            <DetailRow label="First name" value={user?.firstName ?? 'Not added'} />
+            <DetailRow label="First name" value={user?.firstName || 'Not added'} />
             <DetailRow label="Last name" value={user?.lastName || 'Not added'} />
             <DetailRow label="Phone number" value={user?.phoneNumber ?? 'Not added'} />
           </Section>

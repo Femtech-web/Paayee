@@ -24,9 +24,12 @@ enabled = true
 site_url = "paayee://"
 additional_redirect_urls = ["paayee://auth/callback", "http://localhost:8081"]
 jwt_expiry = 3600
-enable_signup = true
+enable_signup = false
 
 [auth.email]
-enable_signup = true
+enable_signup = false
 double_confirm_changes = true
 enable_confirmations = false
+
+[functions.privy-session]
+verify_jwt = false

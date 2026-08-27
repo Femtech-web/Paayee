@@ -30,7 +30,7 @@ export function WelcomeScreen() {
           <Text style={styles.title}>Private money movement, made simple.</Text>
           <Text style={styles.subtitle}>
             Hold NGN, USDC, and USDT in one secure account, then send through bank
-            accounts, handles, or supported wallets.
+            accounts, handles, or other supported apps.
           </Text>
         </View>
       </FadeInView>

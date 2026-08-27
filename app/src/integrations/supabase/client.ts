@@ -5,6 +5,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { runtimeConfig } from '@/config/runtime';
 
+import { getSupabaseDataAccessToken } from './privy-data-token';
+
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -32,10 +34,11 @@ export function getSupabaseClient() {
 
   if (!client) {
     client = createClient(supabaseUrl as string, supabaseAnonKey as string, {
+      accessToken: getSupabaseDataAccessToken,
       auth: {
-        autoRefreshToken: true,
+        autoRefreshToken: false,
         detectSessionInUrl: false,
-        persistSession: true,
+        persistSession: false,
         storage: secureStoreAdapter,
       },
     });

@@ -15,11 +15,11 @@ import { BackBar, ProfileShell } from '../components/profile-shell';
 import { SettingsRow } from '../components/profile-ui';
 import { profileStyles as styles } from '../profile-screen.styles';
 
-const options: Array<{
+const options: {
   currency: DisplayCurrency;
   description: string;
   title: string;
-}> = [
+}[] = [
   {
     currency: 'NGN',
     description: 'Show your total balance in Nigerian Naira.',

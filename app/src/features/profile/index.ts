@@ -2,7 +2,6 @@ export {
   AccountVerificationScreen,
   BiometricUnlockScreen,
   ChangeEmailScreen,
-  ChangePasswordScreen,
   ChangePinIntroScreen,
   CurrentPinScreen,
   DisplayCurrencyScreen,

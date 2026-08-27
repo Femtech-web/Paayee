@@ -21,13 +21,13 @@ export function SendMethodScreen() {
         <SendMethod
           icon="home"
           title="Send to bank account"
-          text="Send NGN to a previous or new bank recipient."
-          onPress={() => router.push('/send/bank' as Href)}
+          text="NGN transfers will return when Paayee’s local money provider is connected."
+          soon
         />
         <SendMethod
           icon="at-sign"
           title="Send to Paayee handle"
-          text="Instant private transfer to another Paayee user."
+          text="Choose Spendable or Private USDC and USDT."
           onPress={() => router.push('/send/handle' as Href)}
         />
         <SendMethod

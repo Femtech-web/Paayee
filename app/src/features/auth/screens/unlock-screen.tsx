@@ -136,7 +136,7 @@ export function UnlockScreen() {
           <Text style={styles.unlockAvatarText}>{user.initials}</Text>
         </View>
         <View style={styles.copy}>
-          <Text style={styles.detailTitle}>Welcome back, {user.firstName}</Text>
+          <Text style={styles.detailTitle}>Welcome back, {user.firstName || 'there'}</Text>
           <Text style={styles.subtitle}>Enter your 4-digit PIN</Text>
         </View>
       </FadeInView>

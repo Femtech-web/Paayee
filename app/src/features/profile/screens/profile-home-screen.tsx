@@ -124,9 +124,9 @@ export function ProfileHomeScreen() {
 
       <Section title="Security">
         <SettingsRow
-          icon="key"
-          title="Change password"
-          onPress={() => router.push('/profile/security/password' as Href)}
+          icon="mail"
+          title="Sign-in email"
+          onPress={() => router.push('/profile/email' as Href)}
         />
         <SettingsRow
           icon="shield"

@@ -55,10 +55,26 @@ export async function encryptMetadataEnvelope<TPayload>(
     operationId: input.operationId,
   });
 
+  // Expo's native base64 accessor has returned an empty value on Hermes for
+  // some AES-GCM payloads. Read the bytes and encode them ourselves so a
+  // receipt can never be persisted without its encrypted body.
+  const [authTagBytes, ciphertextBytes, ivBytes] = await Promise.all([
+    sealed.tag(),
+    sealed.ciphertext({ includeTag: false }),
+    sealed.iv(),
+  ]);
+  const authTag = encodeBase64(authTagBytes);
+  const ciphertext = encodeBase64(ciphertextBytes);
+  const iv = encodeBase64(ivBytes);
+
+  requireBase64Part(authTag, 'authTag');
+  requireBase64Part(ciphertext, 'ciphertext');
+  requireBase64Part(iv, 'iv');
+
   return {
-    authTag: await sealed.tag('base64'),
-    ciphertext: await sealed.ciphertext({ encoding: 'base64', includeTag: false }),
-    iv: await sealed.iv('base64'),
+    authTag,
+    ciphertext,
+    iv,
     keyHandle: protectedKey.keyHandle,
     aclPolicy: protectedKey.aclPolicy,
     schemaVersion,
@@ -120,4 +136,23 @@ function requireBase64Part(value: unknown, name: keyof EncryptedMetadataEnvelope
   }
 
   return value;
+}
+
+function encodeBase64(value: Uint8Array): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let encoded = '';
+
+  for (let index = 0; index < value.length; index += 3) {
+    const first = value[index] ?? 0;
+    const second = value[index + 1] ?? 0;
+    const third = value[index + 2] ?? 0;
+    const combined = (first << 16) | (second << 8) | third;
+
+    encoded += alphabet[(combined >> 18) & 63];
+    encoded += alphabet[(combined >> 12) & 63];
+    encoded += index + 1 < value.length ? alphabet[(combined >> 6) & 63] : '=';
+    encoded += index + 2 < value.length ? alphabet[combined & 63] : '=';
+  }
+
+  return encoded;
 }

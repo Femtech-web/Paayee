@@ -16,7 +16,7 @@ import { AuthShell } from './auth-shell';
 export function CreateHandleScreen() {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState('');
-  const [handle, setHandle] = useState('jadesola');
+  const [handle, setHandle] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const validHandle = handle.length >= 3;
 
@@ -54,7 +54,7 @@ export function CreateHandleScreen() {
       <FadeInView delay={50} style={styles.copy}>
         <Text style={styles.detailTitle}>Choose your Paayee handle</Text>
         <Text style={styles.subtitle}>
-          People can use this to send you private payments without needing your wallet address.
+          People can use this to send you private payments without needing technical account details.
         </Text>
       </FadeInView>
       <FeedbackToast message={errorMessage} tone="error" />

@@ -1,97 +1,15 @@
-import { getSupabaseClient } from './client';
 import { runtimeConfig } from '@/config/runtime';
+import { getCurrentPrivyUser, getPrivyUserEmail } from '@/integrations/privy/session';
 
-const mockAuthData = {
-  session: null,
-  user: null,
-};
+import { getSupabaseClient } from './client';
 
-export async function signUpWithEmail(
-  email: string,
-  password: string,
-  profile?: {
-    firstName?: string;
-    lastName?: string;
-  },
-) {
-  if (!runtimeConfig.realIntegrationsEnabled) {
-    return mockAuthData;
-  }
-
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase.auth.signUp({
-    email: email.trim().toLowerCase(),
-    options: {
-      data: {
-        first_name: profile?.firstName?.trim(),
-        last_name: profile?.lastName?.trim(),
-      },
-    },
-    password,
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  if (data.user && data.session) {
-    await upsertCurrentProfile({
-      email: data.user.email ?? email.trim().toLowerCase(),
-      firstName: profile?.firstName,
-      id: data.user.id,
-      lastName: profile?.lastName,
-      setupStep: 'profile_created',
-    });
-  }
-
-  return data;
-}
-
-export async function signInWithEmail(email: string, password: string) {
-  if (!runtimeConfig.realIntegrationsEnabled) {
-    return mockAuthData;
-  }
-
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
-    password,
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data;
-}
-
-export async function signOutFromSupabase() {
-  if (!runtimeConfig.realIntegrationsEnabled) {
-    return;
-  }
-
-  const supabase = getSupabaseClient();
-  const { error } = await supabase.auth.signOut();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-}
-
-export async function hasSupabaseSession() {
-  if (!runtimeConfig.realIntegrationsEnabled) {
-    return true;
-  }
-
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase.auth.getSession();
-
-  if (error) {
-    return false;
-  }
-
-  return Boolean(data.session);
-}
+type SetupStep =
+  | 'profile_created'
+  | 'email_verified'
+  | 'handle_created'
+  | 'pin_created'
+  | 'biometrics_reviewed'
+  | 'completed';
 
 export async function upsertCurrentProfile(input: {
   countryOfResidence?: string;
@@ -99,116 +17,76 @@ export async function upsertCurrentProfile(input: {
   email?: string;
   firstName?: string;
   handle?: string;
-  id?: string;
-  klydeUserId?: string;
   lastName?: string;
   phoneNumber?: string;
   residentialAddress?: string;
-  setupStep?:
-    | 'profile_created'
-    | 'email_verified'
-    | 'handle_created'
-    | 'pin_created'
-    | 'biometrics_reviewed'
-    | 'completed';
+  privyUserId?: string;
+  setupStep?: SetupStep;
   smartAccountAddress?: string;
 }) {
-  if (!runtimeConfig.realIntegrationsEnabled) {
-    return;
-  }
+  if (!runtimeConfig.realIntegrationsEnabled) return;
 
-  const supabase = getSupabaseClient();
-  const userId = input.id ?? (await getCurrentUserId());
-  const { error } = await supabase.from('profiles').upsert(
+  const user = getCurrentPrivyUser();
+  const privyUserId = input.privyUserId ?? user?.id;
+  if (!privyUserId) throw new Error('Sign in again to continue.');
+
+  const { error } = await getSupabaseClient().from('profiles').upsert(
     {
       country_of_residence: input.countryOfResidence,
       date_of_birth: input.dateOfBirth,
-      email: input.email,
+      email: input.email ?? getPrivyUserEmail(user),
       first_name: input.firstName,
-      id: userId,
-      klyde_user_id: input.klydeUserId,
       last_name: input.lastName,
       onboarding_completed_at: input.setupStep === 'completed' ? new Date().toISOString() : undefined,
       paayee_handle: input.handle,
       phone_number: input.phoneNumber,
+      privy_user_id: privyUserId,
       residential_address: input.residentialAddress,
       setup_step: input.setupStep,
       smart_account_address: input.smartAccountAddress,
     },
-    { onConflict: 'id' },
+    { onConflict: 'privy_user_id' },
   );
 
-  if (error) {
-    throw new Error(error.message);
-  }
-}
-
-export async function requestEmailChange(email: string) {
-  if (!runtimeConfig.realIntegrationsEnabled) {
-    return;
-  }
-
-  const supabase = getSupabaseClient();
-  const { error } = await supabase.auth.updateUser({
-    email: email.trim().toLowerCase(),
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 }
 
 export async function setPinEnabled() {
-  if (!runtimeConfig.realIntegrationsEnabled) {
-    return;
-  }
-
-  const supabase = getSupabaseClient();
-  const profileId = await getCurrentUserId();
-  const { error } = await supabase.from('profile_security_preferences').upsert(
-    {
-      pin_enabled: true,
-      profile_id: profileId,
-    },
-    { onConflict: 'profile_id' },
-  );
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  await updateSecurityPreferences({ pin_enabled: true });
 }
 
 export async function setBiometricsEnabled(enabled: boolean) {
-  if (!runtimeConfig.realIntegrationsEnabled) {
-    return;
-  }
+  await updateSecurityPreferences({ biometrics_enabled: enabled });
+}
 
-  const supabase = getSupabaseClient();
-  const profileId = await getCurrentUserId();
-  const { error } = await supabase.from('profile_security_preferences').upsert(
-    {
-      biometrics_enabled: enabled,
-      profile_id: profileId,
-    },
+async function updateSecurityPreferences(values: {
+  biometrics_enabled?: boolean;
+  pin_enabled?: boolean;
+}) {
+  if (!runtimeConfig.realIntegrationsEnabled) return;
+
+  const profileId = await getCurrentProfileId();
+  const { error } = await getSupabaseClient().from('profile_security_preferences').upsert(
+    { ...values, profile_id: profileId },
     { onConflict: 'profile_id' },
   );
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 }
 
-async function getCurrentUserId() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase.auth.getUser();
+export async function getCurrentProfileId(): Promise<string> {
+  const privyUserId = getCurrentPrivyUser()?.id;
+  if (!privyUserId) throw new Error('Sign in again to continue.');
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  const { data, error } = await getSupabaseClient()
+    .from('profiles')
+    .select('id')
+    .eq('privy_user_id', privyUserId)
+    .maybeSingle();
 
-  if (!data.user) {
-    throw new Error('Log in again to continue setup.');
-  }
+  if (error) throw new Error(error.message);
+  if (data?.id) return data.id as string;
 
-  return data.user.id;
+  await upsertCurrentProfile({ privyUserId, setupStep: 'profile_created' });
+  return getCurrentProfileId();
 }

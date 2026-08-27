@@ -5,20 +5,23 @@ import {
   quoteKlydeWithdrawal,
 } from '@/integrations/klyde';
 import { runtimeConfig } from '@/config/runtime';
-import { getKlydeConfig } from '@/integrations/klyde/env';
 import {
   isStablecoinAsset,
   preparePaayeePrivateStablecoinSend,
   type PaayeePrivateSendResult,
 } from '@/features/confidential/confidential-money';
+import { executePaayeePublicTokenTransfer } from '@/features/confidential/zama-mobile-runtime';
+import { recordPaayeeStablecoinSend } from '@/integrations/paayee';
+import { assetDetails } from '@/features/assets/asset-data';
 
-import type { SendAssetCode, SendRecipient, StablecoinNetworkOption } from './send-data';
+import type { SendAssetCode, SendRecipient, StablecoinBalanceSource, StablecoinNetworkOption } from './send-data';
 
 export type LiveSendMethod = 'bank' | 'handle' | 'stablecoin';
 
 type CreateLiveSendInput = {
   amount: number;
   assetCode: SendAssetCode;
+  balanceSource?: StablecoinBalanceSource;
   method: LiveSendMethod;
   narration?: string;
   network?: StablecoinNetworkOption;
@@ -46,10 +49,48 @@ export async function createLiveSend(input: CreateLiveSendInput) {
       throw new Error('This recipient is not linked to a confidential token destination yet.');
     }
 
-    return preparePaayeePrivateStablecoinSend({
+    const chainId = readWithdrawalChainId(input) ?? 31337;
+    const publicTokenAddress = input.assetCode === 'USDC'
+      ? assetDetails.usdc.publicTokenAddress
+      : assetDetails.usdt.publicTokenAddress;
+    const confidentialTokenAddress = input.assetCode === 'USDC'
+      ? runtimeConfig.paayeeCusdcAddress
+      : runtimeConfig.paayeeCusdtAddress;
+    if (!publicTokenAddress || !confidentialTokenAddress) {
+      throw new Error(`${input.assetCode} is not fully configured on this network.`);
+    }
+
+    if (input.balanceSource === 'public') {
+      const transfer = await executePaayeePublicTokenTransfer({
+        amountMinorUnits: amount.minorUnits!,
+        recipient: walletAddress,
+        tokenAddress: publicTokenAddress,
+      });
+      if (!transfer.transactionHash) throw new Error('The wallet did not return a transaction hash.');
+      const activityOperation = await recordPaayeeStablecoinSend({
+        amountMinorUnits: amount.minorUnits!,
+        chainId,
+        confidentialTokenAddress,
+        destinationAddress: walletAddress,
+        publicTokenAddress,
+        tokenSymbol: input.assetCode,
+        transactionHash: transfer.transactionHash,
+      }).catch((error) => {
+        if (__DEV__) console.warn('[paayee.send.activity]', { balanceSource: 'public', error: String(error) });
+        return undefined;
+      });
+      return {
+        activityOperation,
+        balanceSource: 'public' as const,
+        kind: 'paayee_stablecoin_send' as const,
+        transactionHash: transfer.transactionHash,
+      };
+    }
+
+    const privateSend = await preparePaayeePrivateStablecoinSend({
       amount: input.amount,
       assetCode: input.assetCode,
-      chainId: readWithdrawalChainId(input) ?? 31337,
+      chainId,
       narration: input.narration,
       purpose: input.purpose,
       recipient: {
@@ -59,6 +100,11 @@ export async function createLiveSend(input: CreateLiveSendInput) {
       },
       sendMethod: input.method,
     });
+    return privateSend;
+  }
+
+  if (!runtimeConfig.legacyMoneyRailEnabled) {
+    throw new Error('NGN sends are temporarily unavailable while Paayee connects its new payment provider.');
   }
 
   if (input.method === 'handle') {
@@ -117,6 +163,12 @@ export async function createLiveSend(input: CreateLiveSendInput) {
   );
 }
 
+export function isPaayeeStablecoinSendResult(
+  value: unknown,
+): value is { activityOperation?: { id: string }; balanceSource: 'public'; kind: 'paayee_stablecoin_send'; transactionHash: string } {
+  return Boolean(value && typeof value === 'object' && (value as { kind?: unknown }).kind === 'paayee_stablecoin_send');
+}
+
 function toKlydeMoneyAmount(amount: number, assetCode: SendAssetCode): MoneyAmount {
   const scale = moneyScaleByAsset[assetCode];
   const multiplier = 10 ** scale;
@@ -165,7 +217,7 @@ function readWithdrawalChainId(input: CreateLiveSendInput): number | undefined {
   }
 
   if (input.method === 'handle') {
-    return getKlydeConfig().environment === 'production' ? 11155111 : 31337;
+    return runtimeConfig.zamaChainId;
   }
 
   return undefined;

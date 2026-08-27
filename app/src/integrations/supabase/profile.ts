@@ -1,5 +1,7 @@
 import { runtimeConfig } from '@/config/runtime';
+import { getCurrentPrivyUser, getPrivyUserEmail } from '@/integrations/privy/session';
 
+import { getCurrentProfileId } from './auth';
 import { getSupabaseClient } from './client';
 
 export type PaayeeProfile = {
@@ -9,10 +11,10 @@ export type PaayeeProfile = {
   firstName?: string;
   handle?: string;
   id: string;
-  klydeUserId?: string;
   lastName?: string;
   middleName?: string;
   phoneNumber?: string;
+  privyUserId?: string;
   residentialAddress?: string;
   setupStep?: string;
   smartAccountAddress?: string;
@@ -36,11 +38,11 @@ type PaayeeProfileRow = {
   email?: string | null;
   first_name?: string | null;
   id: string;
-  klyde_user_id?: string | null;
   last_name?: string | null;
   middle_name?: string | null;
   paayee_handle?: string | null;
   phone_number?: string | null;
+  privy_user_id?: string | null;
   residential_address?: string | null;
   setup_step?: string | null;
   smart_account_address?: string | null;
@@ -93,22 +95,15 @@ export async function getCurrentProfile(): Promise<PaayeeProfile | undefined> {
   }
 
   const supabase = getSupabaseClient();
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-
-  if (authError) {
-    throw new Error(authError.message);
-  }
-
-  if (!authData.user) {
-    return undefined;
-  }
+  const user = getCurrentPrivyUser();
+  if (!user) return undefined;
 
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id,email,first_name,middle_name,last_name,phone_number,date_of_birth,country_of_residence,residential_address,paayee_handle,klyde_user_id,smart_account_address,setup_step',
+      'id,email,first_name,middle_name,last_name,phone_number,date_of_birth,country_of_residence,residential_address,paayee_handle,privy_user_id,smart_account_address,setup_step',
     )
-    .eq('id', authData.user.id)
+    .eq('privy_user_id', user.id)
     .maybeSingle();
 
   if (error) {
@@ -119,22 +114,22 @@ export async function getCurrentProfile(): Promise<PaayeeProfile | undefined> {
 
   if (!row) {
     return {
-      email: authData.user.email ?? undefined,
-      id: authData.user.id,
+      email: getPrivyUserEmail(user),
+      id: user.id,
     };
   }
 
   return {
     countryOfResidence: row.country_of_residence ?? undefined,
     dateOfBirth: row.date_of_birth ?? undefined,
-    email: row.email ?? authData.user.email ?? undefined,
+    email: row.email ?? getPrivyUserEmail(user),
     firstName: row.first_name ?? undefined,
     handle: row.paayee_handle ?? undefined,
     id: row.id,
-    klydeUserId: row.klyde_user_id ?? undefined,
     lastName: row.last_name ?? undefined,
     middleName: row.middle_name ?? undefined,
     phoneNumber: row.phone_number ?? undefined,
+    privyUserId: row.privy_user_id ?? undefined,
     residentialAddress: row.residential_address ?? undefined,
     setupStep: row.setup_step ?? undefined,
     smartAccountAddress: row.smart_account_address ?? undefined,
@@ -180,15 +175,7 @@ export async function saveCurrentBeneficiary(input: SavePaayeeBeneficiaryInput):
   }
 
   const supabase = getSupabaseClient();
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-
-  if (authError) {
-    throw new Error(authError.message);
-  }
-
-  if (!authData.user) {
-    throw new Error('Please log in again to save this recipient.');
-  }
+  const profileId = await getCurrentProfileId();
 
   const displayName = input.displayName.trim();
 
@@ -206,7 +193,7 @@ export async function saveCurrentBeneficiary(input: SavePaayeeBeneficiaryInput):
     network_name: cleanOptional(input.networkName),
     paayee_handle: input.handle ? input.handle.trim().replace(/^@+/, '').toLowerCase() : null,
     preferred_asset: input.preferredAsset ?? null,
-    profile_id: authData.user.id,
+    profile_id: profileId,
     wallet_address: cleanOptional(input.walletAddress),
   });
 

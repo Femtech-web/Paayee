@@ -1,12 +1,8 @@
 export {
-  requestEmailChange,
-  hasSupabaseSession,
   setBiometricsEnabled,
   setPinEnabled,
-  signInWithEmail,
-  signOutFromSupabase,
-  signUpWithEmail,
   upsertCurrentProfile,
+  getCurrentProfileId,
 } from './auth';
 export { getSupabaseClient, isSupabaseConfigured } from './client';
 export { requestKlydeHostAppAssertion } from './klyde-session';

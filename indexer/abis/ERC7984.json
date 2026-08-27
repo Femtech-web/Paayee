@@ -1,0 +1,12 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+      { "indexed": true, "internalType": "euint64", "name": "amount", "type": "bytes32" }
+    ],
+    "name": "ConfidentialTransfer",
+    "type": "event"
+  }
+]

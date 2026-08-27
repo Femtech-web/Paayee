@@ -1,6 +1,6 @@
 # Paayee
 
-Paayee is a private money app for NGN, USDC, and USDT. It gives users a familiar mobile-wallet experience while moving sensitive stablecoin balances and private payment metadata behind confidential rails powered by Klyde and Zama.
+Paayee is a private money app for NGN, USDC, and USDT. It gives users a familiar mobile-wallet experience while moving sensitive stablecoin balances and private payment metadata through Privy embedded wallets and Paayee-owned Zama confidential rails.
 
 The product goal is simple: private payments should feel like normal payments.
 
@@ -14,20 +14,13 @@ The product goal is simple: private payments should feel like normal payments.
 - Shows private balances only after user-controlled reveal/decryption.
 - Uses encrypted receipt metadata so transaction history can stay useful without leaking every numeric detail by default.
 
-## How Klyde Fits In
+## Infrastructure
 
-Klyde is the money infrastructure layer under Paayee.
-
-Paayee owns the mobile product, user experience, and Zama-facing confidential execution. Klyde owns the infrastructure brain:
-
-- app identity and API-key scoping
-- user and session resolution
-- embedded wallet and smart-account records
-- registered confidential assets
-- funding instructions and settlement references
-- operation status, receipts, reconciliation, and worker jobs
-- stablecoin deposit monitoring
-- Klyde-managed cUSDC/cUSDT rails for the first production phase
+- Privy creates and signs with the user's embedded Ethereum wallet.
+- Supabase stores Paayee profiles, handles, beneficiaries, and security preferences.
+- Paayee owns its ERC-7984 cUSDC/cUSDT contracts and confidential-operation records.
+- Zama provides encrypted execution and user-authorized balance decryption.
+- Legacy fiat ledger adapters remain isolated until a production NGN provider replaces them.
 
 ## Money Model
 
@@ -35,10 +28,9 @@ Paayee uses two money buckets.
 
 `NGN balance`
 
-- Klyde ledger balance.
-- Backed by bank/payment-provider settlement.
-- Used for NGN handle sends, bank withdrawals, and local wallet flows.
-- Not automatically shielded into stablecoin.
+- Reserved for a Paayee-owned payment-provider integration.
+- Not enabled in the current public-chain test build.
+- Never automatically converted or shielded into stablecoin.
 
 `Private stablecoin balance`
 
@@ -51,11 +43,7 @@ This avoids mixing fiat-wallet behavior with private stablecoin behavior. NGN st
 
 ## Current Rail Strategy
 
-Paayee currently uses Klyde-managed confidential assets as the active production rail:
-
-- Klyde-managed cUSDC/cUSDT are the default assets for balances, stablecoin deposits, auto-shielding, and private stablecoin sends.
-- Paayee app-managed cUSDC/cUSDT can be registered as non-default assets for future app-owned rail experiments.
-- This keeps phase one simpler: one active stablecoin rail, one indexer path, one reconciliation path.
+Paayee-managed cUSDC/cUSDT are the active confidential assets. Their addresses are configured directly in the Expo environment, and the Privy embedded wallet owns, signs, and decrypts the user's confidential balances.
 
 ## Core Flows
 
@@ -63,11 +51,11 @@ Paayee currently uses Klyde-managed confidential assets as the active production
 
 `NGN bank transfer`
 
-The user receives bank-transfer instructions, the payment provider confirms settlement, and Klyde credits the NGN ledger balance.
+This route stays disabled until Paayee connects a production payment provider directly.
 
 `USDC/USDT deposit`
 
-The user sends public USDC/USDT to their Paayee/Klyde wallet. Klyde detects the transfer and the private rail shields it into cUSDC/cUSDT.
+The user sends public USDC/USDT to their Privy wallet. The Paayee worker detects and confirms the deposit, creates its receipt, and refreshes activity. The user then chooses **Make private** to shield it into cUSDC/cUSDT.
 
 `Conversion`
 
@@ -77,15 +65,15 @@ NGN to stablecoin and stablecoin to NGN are explicit conversion flows. NGN is no
 
 `Paayee handle`
 
-NGN sends can move through the Klyde ledger. Stablecoin sends use confidential token execution.
+Stablecoin sends use Paayee confidential token execution. NGN handle sends remain disabled until the direct fiat rail is ready.
 
 `Bank account`
 
-NGN is debited from the Klyde ledger and paid out through the configured provider.
+This route remains disabled until the direct fiat payout provider is ready.
 
 `Stablecoin wallet`
 
-USDC/USDT sends resolve to confidential stablecoin operations and settle to the target wallet through the active Zama/Klyde rail.
+USDC/USDT sends resolve to Paayee confidential stablecoin operations and settle through the active Zama rail.
 
 ## Privacy Boundary
 
@@ -93,14 +81,16 @@ Paayee should not treat normal public receipts as private.
 
 Public deposit details, such as the public USDC amount received, are ingress facts. The private balance begins after shielding into cUSDC/cUSDT.
 
-Private operation metadata is encrypted before storage. Klyde can store operation references, status, asset identifiers, receipt ids, and reconciliation metadata, but sensitive numeric details should either be confidential token state or encrypted metadata.
+Private operation metadata is encrypted before storage. Paayee stores only the minimum public references needed for status, receipts, and reconciliation; sensitive numeric details should remain confidential token state or encrypted metadata.
 
 ## Repository Layout
 
 - `app/` - Expo mobile app.
+- `backend/` - minimal NestJS API and deposit/operation worker.
 - `contracts/` - Paayee confidential asset deployment and registration scripts.
+- `indexer/` - optional Goldsky or Graph Studio subgraph.
 - `docs/` - privacy and architecture notes.
-- `supabase/` - Paayee host-side functions and auth integration.
+- `supabase/` - Paayee application data, Privy token exchange, and row-level access policies.
 
 ## Local Development
 
@@ -117,10 +107,9 @@ Deploy Paayee contracts:
 ```bash
 cd contracts
 npm run deploy:localhost
-npm run register:klyde
 ```
 
-For full local privacy testing, Klyde must be running with Hardhat, Postgres, Redis, API, worker, and the local indexer configured.
+For full local privacy testing, run Hardhat with the FHEVM mock relayer and configure the deployed cUSDC/cUSDT addresses in the Expo environment.
 
 ## Production Notes
 
@@ -129,24 +118,24 @@ Before public release:
 - rotate all leaked development secrets and API keys
 - configure a real payment provider for NGN deposits and withdrawals
 - configure real Sepolia/Mainnet RPC and Zama relayer values
-- confirm Klyde API and worker are using the same database, Redis, and chain config
-- verify confidential asset registrations for the active app id
+- enable Privy email and Google login, then deploy the `privy-session` Supabase Edge Function
+- verify the Paayee confidential token addresses and Zama relayer config
 - run an end-to-end add-money and send-money test on the active rail
 
 ## Status
 
-Paayee is in active build toward a production test release. The product shell, Klyde integration, confidential balance reveal, stablecoin funding path, receipt model, and SDK publishing path are in place.
+Paayee is in active build toward a public test release. Privy login, confidential balance reveal, Paayee-owned stablecoin deposit tracking, manual privacy controls, receipts, and optional hosted indexing are in place. Legacy Klyde calls are disabled in the test build.
 
 Current route status:
 
 | Area      | Route                         | Status                                                                                                                                              |
 | --------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Add money | NGN bank transfer             | Product flow is implemented. Live settlement needs the configured payment provider webhook/payout rail.                                             |
-| Add money | Public USDC/USDT deposit      | Implemented on Klyde-managed rails. Live auto-shield depends on worker execution config.                                                            |
-| Add money | NGN to cUSDC/cUSDT conversion | UI and Klyde settlement shape are implemented. Treasury private-credit execution is the remaining production step.                                  |
-| Add money | cUSDC/cUSDT to NGN conversion | Product flow is implemented. Production-grade settlement should privately transfer/debit stablecoin into Klyde settlement before NGN ledger credit. |
-| Send      | NGN to Paayee handle          | Implemented through Klyde ledger transfer.                                                                                                          |
-| Send      | NGN to bank                   | Product flow is implemented. Real payout depends on provider integration.                                                                           |
+| Add money | NGN bank transfer             | Paused until the direct Paayee payment-provider rail is connected.                                                                                   |
+| Add money | Public USDC/USDT deposit      | Implemented with Paayee API/worker receipts and user-controlled shielding.                                                                           |
+| Add money | NGN to cUSDC/cUSDT conversion | Paused until the direct fiat treasury/provider rail is connected.                                                                                    |
+| Add money | cUSDC/cUSDT to NGN conversion | Paused until the direct fiat treasury/provider rail is connected.                                                                                    |
+| Send      | NGN to Paayee handle          | Paused with the NGN rail.                                                                                                                            |
+| Send      | NGN to bank                   | Paused with the NGN rail.                                                                                                                            |
 | Send      | USDC/USDT to Paayee handle    | Uses the confidential stablecoin send path. Requires live Zama + smart-account execution.                                                           |
 | Send      | USDC/USDT to external wallet  | Route and destination wiring are implemented. Final live success depends on confidential transfer execution on the active rail.                     |
 
